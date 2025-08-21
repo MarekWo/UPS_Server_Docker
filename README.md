@@ -1,7 +1,6 @@
 # UPS Power Management Server (Docker Edition)
 
-[](https://www.google.com/search?q=LICENSE)
-[](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A complete, containerized solution for managing graceful shutdowns for UPS-protected servers that lack a direct data monitoring port. It combines a virtual NUT (Network UPS Tools) server, a power monitoring script, and a central API hub for client configuration.
 
@@ -155,4 +154,4 @@ To update the application to the latest version from GitHub:
 
 ### License
 
-This project is licensed under the MIT License - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
