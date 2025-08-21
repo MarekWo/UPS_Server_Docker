@@ -112,7 +112,7 @@ The logic is simple but effective:
 Once configured, starting the server is a single command from the project's root directory:
 
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
 
   * `--build`: Only needed the first time or after changing the `Dockerfile` or application scripts.
@@ -122,15 +122,15 @@ docker-compose up --build -d
 
   * **View Logs:**
     ```bash
-    docker-compose logs -f
+    docker compose logs -f
     ```
   * **Stop the Container:**
     ```bash
-    docker-compose down
+    docker compose down
     ```
   * **Restart the Container:**
     ```bash
-    docker-compose restart
+    docker compose restart
     ```
 
 You can also monitor the `power_manager.log` file in the `./logs` directory, which is created automatically on your host.
@@ -147,7 +147,7 @@ To update the application to the latest version from GitHub:
     ```
 2.  **Rebuild the image and restart the container:**
     ```bash
-    docker-compose up --build -d
+    docker compose up --build -d
     ```
     Docker Compose will intelligently rebuild only what's necessary and restart the container with the latest updates. Your local configuration files will be preserved.
 
