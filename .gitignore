@@ -7,3 +7,6 @@ rsyslog/custom.conf
 
 # Ignore local log files
 logs/
+
+# Ignore local environment file
+.env

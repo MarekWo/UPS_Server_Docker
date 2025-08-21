@@ -18,7 +18,8 @@ RUN apt-get update && \
     curl \
     jq \
     logrotate \
-    rsyslog && \
+    rsyslog \
+    tzdata && \
     # Clean up the apt cache to reduce image size
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

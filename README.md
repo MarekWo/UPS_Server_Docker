@@ -95,7 +95,16 @@ The logic is simple but effective:
         ```
       * Then, edit `config/power_manager.conf` and `config/upshub.conf` and replace the variables described above with your values. 
 
-3.  **(Optional) Configure Syslog Forwarding:**
+3.  **Time zone configuration:**   
+    This allows you to setup your local timezone in your Docker container
+
+      * First, copy the example environment file:
+        ```bash
+        cp .env.example .env
+        ```
+      * Then, edit `.env` and replace the TZ variable your your local timezone name.
+
+4.  **(Optional) Configure Syslog Forwarding:**
     This allows you to send all internal logs to a central server like Graylog.
 
       * First, copy the example configuration file:
@@ -103,6 +112,8 @@ The logic is simple but effective:
         cp rsyslog/custom.conf.example rsyslog/custom.conf
         ```
       * Then, edit `rsyslog/custom.conf` and replace the placeholder IP address and port with your syslog server details. 
+
+ 
 
 -----
 

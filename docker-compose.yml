@@ -13,6 +13,12 @@ services:
     # Set the restart policy. 'unless-stopped' means it will automatically
     # restart if it crashes, unless you manually stop it.
     restart: unless-stopped
+
+    environment:
+      # Set the timezone for the container from the .env file.
+      # It defaults to UTC if the variable is not set.
+      # Users should copy .env.example to .env and set their timezone.
+      - TZ=${TZ:-UTC}
     
     ports:
       # Map the container's ports to the host machine's ports.
