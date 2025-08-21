@@ -1,0 +1,16 @@
+# ===================================================================
+# UPS Hub Central Configuration
+#
+# Location: /etc/nut/upshub.conf
+#
+# This file defines the shutdown parameters for each UPS client.
+# Each client is identified by its IP address in a section header.
+# ===================================================================
+
+[192.168.1.120]
+UPS_NAME=ups@192.168.1.118
+SHUTDOWN_DELAY_MINUTES=15
+
+[192.168.1.121]
+UPS_NAME=ups@192.168.1.118
+SHUTDOWN_DELAY_MINUTES=10

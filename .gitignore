@@ -1,0 +1,9 @@
+# Ignore the actual config files
+config/power_manager.conf
+config/upshub.conf
+
+# Ignore custom rsyslog configuration files
+rsyslog/custom.conf
+
+# Ignore local log files
+logs/

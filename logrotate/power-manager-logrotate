@@ -1,0 +1,22 @@
+# Logrotate configuration for the Power Manager log file.
+# This file should be placed in /etc/logrotate.d/
+
+/var/log/power_manager.log {
+    # Rotate the log file weekly.
+    daily
+
+    # Keep 4 weeks of backlogs.
+    rotate 7
+
+    # Create new log files after rotating old ones.
+    create
+
+    # Compress the rotated log files.
+    compress
+
+    # Don't rotate the log if it's empty.
+    notifempty
+
+    # If the log file is missing, don't produce an error.
+    missingok
+}

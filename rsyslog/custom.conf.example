@@ -1,0 +1,2 @@
+# Forward all syslog messages to the external log aggregation server.
+# *.* @192.168.1.30:514;RSYSLOG_SyslogProtocol23Format

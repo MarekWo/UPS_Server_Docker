@@ -1,0 +1,2 @@
+# Run the power_manager.sh script every minute
+* * * * * root /app/power_manager.sh >> /var/log/power_manager.log 2>&1
