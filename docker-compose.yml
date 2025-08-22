@@ -23,7 +23,7 @@ services:
       # Users should copy .env.example to .env and set their timezone.
       - TZ=${TZ:-UTC}
     
-    ports:
+    # ports:
       # Map the container's ports to the host machine's ports.
       # Format is "HOST:CONTAINER"
 
