@@ -9,13 +9,15 @@ Description: A lightweight Flask-based REST API to serve configuration
 """
 
 import configparser
+import os
 from flask import Flask, jsonify, request, abort
 
 # --- Configuration ---
 # The single, hardcoded token for all clients.
 # IMPORTANT: Change this to a long, random string in your actual deployment.
 API_TOKEN = "ggJVLx8MtcZvs84DVrSxzsiJPb5VoR4EMGUu"
-CONFIG_FILE = "/etc/nut/upshub.conf"
+UPSHUB_CONFIG_FILE = "/etc/nut/upshub.conf"
+UPS_CONF_FILE = "/etc/nut/ups.conf"
 
 app = Flask(__name__)
 
@@ -27,6 +29,56 @@ def get_client_ip():
         return request.headers.getlist("X-Forwarded-For")[0]
     else:
         return request.remote_addr
+
+def get_server_ip():
+    """
+    Determines the IP address for the UPS server from the environment.
+
+    This function relies on the 'UPS_SERVER_HOST_IP' environment variable.
+    This variable is mandatory for the API to report the correct IP address
+    of the Docker host to the clients.
+    """
+    host_ip = os.environ.get('UPS_SERVER_HOST_IP')
+    if not host_ip:
+        # This is a critical configuration error. The application cannot
+        # function correctly without it.
+        error_msg = (
+            "CRITICAL: The 'UPS_SERVER_HOST_IP' environment variable is not set. "
+            "This variable must be defined in your .env file with the IP address "
+            "of the Docker host. The API cannot continue without it."
+        )
+        app.logger.error(error_msg)
+        abort(500, description=error_msg)
+    
+    app.logger.info(f"Using server IP from UPS_SERVER_HOST_IP environment variable: {host_ip}")
+    return host_ip
+
+def get_ups_name():
+    """
+    Parses ups.conf to find the name of the UPS, which is the first section
+    defined in the file (e.g., [ups]). This method avoids using configparser
+    to handle files with global settings outside of sections.
+    """
+    try:
+        with open(UPS_CONF_FILE, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                # Ignore comments and empty lines
+                if not line or line.startswith('#'):
+                    continue
+
+                # Check for a section header
+                if line.startswith('[') and line.endswith(']'):
+                    # Extract the name between the brackets
+                    ups_name = line[1:-1].strip()
+                    if ups_name:
+                        return ups_name
+        # If the loop completes without finding a valid section header
+        raise ValueError(f"No UPS sections found in {UPS_CONF_FILE}")
+
+    except (FileNotFoundError, ValueError) as e:
+        app.logger.error(f"Could not read UPS name: {e}")
+        abort(500, description=str(e))
 
 @app.route('/config', methods=['GET'])
 def get_config():
@@ -56,8 +108,8 @@ def get_config():
     config.optionxform = str
     try:
         # Use read() which returns an empty list if the file doesn't exist.
-        if not config.read(CONFIG_FILE):
-            raise FileNotFoundError(f"Configuration file not found at {CONFIG_FILE}")
+        if not config.read(UPSHUB_CONFIG_FILE):
+            raise FileNotFoundError(f"Client configuration file not found at {UPSHUB_CONFIG_FILE}")
             
     except FileNotFoundError as e:
         app.logger.error(e)
@@ -70,8 +122,16 @@ def get_config():
     # 4. --- Find and Return the Client's Configuration ---
     if client_ip in config:
         # The section for the client exists. Convert it to a dictionary.
+        # This will contain client-specific settings like SHUTDOWN_DELAY_MINUTES.
         client_config = dict(config[client_ip])
-        app.logger.info(f"Found configuration for {client_ip}: {client_config}")
+        app.logger.info(f"Found base configuration for {client_ip}: {client_config}")
+
+        # 5. --- Dynamically Generate and Add the UPS_NAME ---
+        ups_name = get_ups_name()
+        server_ip = get_server_ip()
+        client_config['UPS_NAME'] = f"{ups_name}@{server_ip}"
+
+        app.logger.info(f"Generated full configuration for {client_ip}: {client_config}")
         return jsonify(client_config)
     else:
         # The client's IP was not found in the config file.

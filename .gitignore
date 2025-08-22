@@ -1,3 +1,6 @@
+# Ingore the production docker-compose.yml file
+docker-compose.yml
+
 # Ignore the actual config files
 config/power_manager.conf
 config/upshub.conf

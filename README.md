@@ -73,9 +73,15 @@ The logic is simple but effective:
     cd /opt/ups-server-docker
     ```
 
-2.  **Configure the Server:**
-    All configuration is done by editing the files in the `./config/nut/` directory.
+2.  **Prepare Docker Compose File:**
+    Copy the example Docker Compose file. This ensures your customized file won't be overwritten by future `git pull` updates.
+    ```bash
+    cp docker-compose.yml.example docker-compose.yml
+    ```
+    You can now edit `docker-compose.yml` if you need to make advanced changes, but for most users, the default is fine.
 
+3.  **Configure the Server:**
+    All configuration is done by editing the files in the `./config/` directory.
       * **`power_manager.conf`**:
           * `SENTINEL_HOSTS`: A space-separated list of IPs for your sentinel devices.
           * `WAKE_HOSTS`: A space-separated list of servers to wake up, in `IP;MAC` format.
@@ -83,8 +89,7 @@ The logic is simple but effective:
           * `BROADCAST_IP`: The broadcast address for your server subnet.
       * **`upshub.conf`**:
           * Define each client by its IP address in a section header (e.g., `[192.168.1.100]`).
-          * Set `UPS_NAME` to point to the IP of your Docker host.
-          * Set `SHUTDOWN_DELAY_MINUTES` for each client.
+          * Set `SHUTDOWN_DELAY_MINUTES` for each client. The `UPS_NAME` is now generated automatically by the API.
       * **`upsd.users`**:
           * (optional) Set a secure password for the `monuser`. This is what your UPS clients will use to connect.
 
@@ -95,16 +100,18 @@ The logic is simple but effective:
         ```
       * Then, edit `config/power_manager.conf` and `config/upshub.conf` and replace the variables described above with your values. 
 
-3.  **Time zone configuration:**   
-    This allows you to setup your local timezone in your Docker container
+4.  **Environment Configuration:**
+    This file (`.env`) is used to pass crucial settings into the container, such as the host's IP address and your local timezone.
 
-      * First, copy the example environment file:
+      * First, copy the example environment file if you haven't already:
         ```bash
         cp .env.example .env
         ```
-      * Then, edit `.env` and replace the TZ variable your your local timezone name.
+      * Then, edit the `.env` file and set the following variables:
+        * `TZ`: Your local timezone name (e.g., `Europe/Warsaw`).
+        * `UPS_SERVER_HOST_IP`: **(Required)** The IP address of the Docker host machine. This is the IP that your NUT clients will use to connect to the server (e.g., `192.168.1.10`).
 
-4.  **(Optional) Configure Syslog Forwarding:**
+5.  **(Optional) Configure Syslog Forwarding:**
     This allows you to send all internal logs to a central server like Graylog.
 
       * First, copy the example configuration file:
