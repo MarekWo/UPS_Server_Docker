@@ -10,16 +10,72 @@ Description: A lightweight Flask-based REST API to serve configuration
 
 import configparser
 import os
+import subprocess
 from flask import Flask, jsonify, request, abort
 
 # --- Configuration ---
 # The single, hardcoded token for all clients.
 # IMPORTANT: Change this to a long, random string in your actual deployment.
 API_TOKEN = "ggJVLx8MtcZvs84DVrSxzsiJPb5VoR4EMGUu"
+UPSC_CMD = "/usr/bin/upsc"
 UPSHUB_CONFIG_FILE = "/etc/nut/upshub.conf"
 UPS_CONF_FILE = "/etc/nut/ups.conf"
 
 app = Flask(__name__)
+
+# --- Helper Functions ---
+
+def parse_upsc_value(value_str):
+    """
+    Tries to convert a string value to a more specific type (int, float).
+    """
+    value_str = value_str.strip()
+    # Try integer first
+    try:
+        return int(value_str)
+    except ValueError:
+        pass
+    # Try float
+    try:
+        return float(value_str)
+    except ValueError:
+        pass
+    # Fallback to the original string
+    return value_str
+
+def build_nested_dict(flat_dict):
+    """
+    Converts a dictionary with dot-separated keys into a nested dictionary.
+    Handles key conflicts gracefully (e.g., 'driver.version' and
+    'driver.version.internal').
+    """
+    nested_dict = {}
+    # By sorting the keys, we ensure that parent keys (like 'driver.version')
+    # are processed before potential child keys ('driver.version.internal'),
+    # leading to a consistent and predictable structure.
+    for key, value in sorted(flat_dict.items()):
+        parts = key.split('.')
+        d = nested_dict
+        for i, part in enumerate(parts[:-1]):
+            # If the current path holds a value, we can't nest further.
+            # So, we create a key from the remaining parts and break.
+            if part in d and not isinstance(d[part], dict):
+                remaining_key = '.'.join(parts[i:])
+                d[remaining_key] = value
+                break
+            d = d.setdefault(part, {})
+        else:  # This 'else' belongs to the 'for' loop
+            # This block runs if the loop completed without a 'break'
+            # Check if the final key would overwrite a dictionary
+            final_key = parts[-1]
+            if final_key in d and isinstance(d[final_key], dict):
+                # A conflict where a parent node is also a value.
+                # e.g. 'driver.version' exists, and we have 'driver.version.internal'
+                # We can store the value with a special key, e.g., '_value'
+                d[final_key]['_value'] = value
+            else:
+                d[final_key] = value
+    return nested_dict
 
 def get_client_ip():
     """
@@ -79,6 +135,54 @@ def get_ups_name():
     except (FileNotFoundError, ValueError) as e:
         app.logger.error(f"Could not read UPS name: {e}")
         abort(500, description=str(e))
+
+# --- API Endpoints ---
+
+@app.route('/upsc', methods=['GET'])
+def get_upsc_data():
+    """
+    Endpoint to retrieve the live status of the UPS. It runs the 'upsc'
+    command on the server and returns the data as a nested JSON object.
+    """
+    # 1. --- Security Check: Validate API Token ---
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or auth_header != f"Bearer {API_TOKEN}":
+        abort(401, description="Unauthorized: Missing or invalid API token.")
+
+    app.logger.info("UPS status request received from a client.")
+
+    # 2. --- Get UPS Name and run the upsc command ---
+    try:
+        ups_name = get_ups_name()
+        command = [UPSC_CMD, f"{ups_name}@localhost"]
+        app.logger.info(f"Executing command: {' '.join(command)}")
+
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=True,  # Raises CalledProcessError on non-zero exit codes
+            encoding='utf-8'
+        )
+    except FileNotFoundError:
+        msg = f"Server error: The command '{UPSC_CMD}' was not found."
+        app.logger.error(msg)
+        abort(500, description=msg)
+    except subprocess.CalledProcessError as e:
+        msg = f"Error executing upsc command: {e.stderr.strip()}"
+        app.logger.error(msg)
+        abort(500, description=msg)
+
+    # 3. --- Parse the output into a flat dictionary ---
+    flat_data = {}
+    for line in result.stdout.strip().split('\n'):
+        key, value = line.split(':', 1)
+        flat_data[key.strip()] = parse_upsc_value(value.strip())
+
+    # 4. --- Convert to nested dictionary and return as JSON ---
+    nested_data = build_nested_dict(flat_data)
+    app.logger.info(f"Successfully retrieved and parsed UPS status.")
+    return jsonify(nested_data)
 
 @app.route('/config', methods=['GET'])
 def get_config():

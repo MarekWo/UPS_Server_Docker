@@ -30,9 +30,10 @@ The logic is simple but effective:
 
 ### Features
 
-  * **Hardware-Independent:** Works with any UPS, as it doesn't connect to it.
-  * **Easy Deployment:** The entire multi-service application is containerized and managed with a single `docker-compose.yml` file.
-  * **Centralized Configuration:** All client shutdown parameters are managed from a single `upshub.conf` file, served via a lightweight REST API.
+  * **Hardware-Independent:** Works with any UPS because it doesn't require a direct data connection.
+  * **Easy Deployment:** Fully containerized and managed with a single `docker-compose.yml` file.
+  * **Centralized Management API:** A lightweight REST API serves client configurations (`/config`) and live UPS status (`/upsc`), centralizing all client interactions.
+  * **Live Status API:** The `/upsc` endpoint provides real-time UPS status in a clean, nested JSON format, perfect for monitoring dashboards or advanced scripting.
   * **Standard-Compliant:** Controls a standard NUT server, making it compatible with any NUT client (Linux, Windows, Synology DSM, etc.).
   * **Automated Recovery:** Includes a delayed Wake-on-LAN function to automatically restart servers after stable power has returned.
   * **Robust Logging:** Includes built-in log rotation and optional, configurable forwarding to a central syslog server like Graylog.
@@ -150,13 +151,69 @@ services:
     # ... rest of your configuration
 ```
 
-⚠️ **Security Note:** Using `network_mode: host` removes network isolation between the container and the host. The container gains access to all of the host's network interfaces and can bind to any port. While this application is built to be trustworthy, you should always be aware of the security implications of this setting. For more details, please see the [official Docker documentation on host networking](https://docs.docker.com/network/host/).
+⚠️ **Security Note:** Using `network_mode: host` removes network isolation between the container and the host. The container gains access to all of the host's network interfaces and can bind to any port. While this application is built to be trustworthy, you should always be aware of the security implications of this setting. For more details, please see the official Docker documentation on host networking.
 
 #### Option 2: Standard Network Isolation (WoL Disabled)
 
 If you do not need the Wake-on-LAN feature or are not comfortable with using host network mode, simply **do not add** the `network_mode: host` line.
 
 In this case, the NUT server and API will function correctly for monitoring and shutting down clients, but the ability to automatically wake them up will be disabled.
+
+-----
+
+### API Endpoints
+
+The server provides a simple REST API for client configuration and status monitoring. All endpoints require an `Authorization` header with a bearer token. You must change the hardcoded token in `app/api.py` for a production environment.
+
+**Example Request:**
+```bash
+curl -H "Authorization: Bearer <your_secret_token>" http://<server_ip>:5000/upsc
+```
+
+#### `GET /config`
+This endpoint provides client-specific shutdown configuration. The client's IP address is used to look up its settings in `upshub.conf`.
+
+*   **Query Parameter:** `ip=<client_ip>` (optional, falls back to request source IP).
+*   **Returns:** A JSON object with the client's configuration, including the dynamically generated `UPS_NAME` and `SHUTDOWN_DELAY_MINUTES`.
+
+**Example Response (`/config?ip=192.168.1.100`):**
+```json
+{
+  "SHUTDOWN_DELAY_MINUTES": "5",
+  "UPS_NAME": "ups@192.168.1.10"
+}
+```
+
+#### `GET /upsc`
+This endpoint provides live status information from the NUT server, equivalent to running the `upsc` command locally, but with clean, nested JSON output.
+
+*   **Returns:** A nested JSON object containing all available UPS variables. This is ideal for monitoring dashboards or advanced client-side logic.
+
+**Example Response:**
+```json
+{
+  "device": {
+    "mfr": "Dummy Manufacturer",
+    "model": "Dummy UPS",
+    "type": "ups"
+  },
+  "driver": {
+    "name": "dummy-ups",
+    "parameter": {
+      "mode": "dummy",
+      "pollinterval": 2,
+      "port": "/var/run/nut/virtual.device"
+    },
+    "version": "2.8.0",
+    "version.internal": 0.15
+  },
+  "ups": {
+    "mfr": "Dummy Manufacturer",
+    "model": "Dummy UPS",
+    "status": "OL"
+  }
+}
+```
 
 -----
 
