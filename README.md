@@ -113,7 +113,43 @@ The logic is simple but effective:
         ```
       * Then, edit `rsyslog/custom.conf` and replace the placeholder IP address and port with your syslog server details. 
 
- 
+## 🔌 Network Configuration for Wake-on-LAN (WoL)
+
+The Wake-on-LAN (WoL) feature requires the container to send special "magic packets" to your network's **broadcast address**. Docker's default, sandboxed network mode prevents containers from sending broadcast packets to the physical LAN, which means the WoL feature will not work out of the box.
+
+To enable WoL, you must allow the container to share the host's network stack.
+
+#### Option 1: Full Functionality with `host` Network Mode (Recommended for WoL)
+
+The simplest way to enable WoL is to add the `network_mode: host` directive to your `docker-compose.yml` file. This gives the container direct access to the host's network interfaces.
+
+Your `docker-compose.yml` should be modified to include this line:
+
+```yaml
+version: '3.8'
+
+services:
+  ups-server:
+    build: .
+    container_name: ups-server
+    restart: unless-stopped
+    network_mode: host  # This line enables WoL functionality
+
+    # NOTE: The 'ports' section is ignored in host mode and can be removed.
+    # ports:
+    #   - "3493:3493"
+    #   - "5000:5000"
+    
+    # ... rest of your configuration
+```
+
+⚠️ **Security Note:** Using `network_mode: host` removes network isolation between the container and the host. The container gains access to all of the host's network interfaces and can bind to any port. While this application is built to be trustworthy, you should always be aware of the security implications of this setting. For more details, please see the [official Docker documentation on host networking](https://docs.docker.com/network/host/).
+
+#### Option 2: Standard Network Isolation (WoL Disabled)
+
+If you do not need the Wake-on-LAN feature or are not comfortable with using host network mode, simply **do not add** the `network_mode: host` line.
+
+In this case, the NUT server and API will function correctly for monitoring and shutting down clients, but the ability to automatically wake them up will be disabled.
 
 -----
 

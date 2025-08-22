@@ -13,6 +13,9 @@ services:
     # Set the restart policy. 'unless-stopped' means it will automatically
     # restart if it crashes, unless you manually stop it.
     restart: unless-stopped
+     # Use the host's network stack directly.
+     # this is necessary for the WoL (wake on lan) to work.
+    network_mode: host 
 
     environment:
       # Set the timezone for the container from the .env file.
@@ -23,10 +26,13 @@ services:
     ports:
       # Map the container's ports to the host machine's ports.
       # Format is "HOST:CONTAINER"
+
       # - Expose the NUT server on port 3493.
-      - "3493:3493"
+      # This nees to be disabled if you used the network_mode: host option.
+      # - "3493:3493"
       # - Expose the UPS Hub API on port 5000.
-      - "5000:5000"
+      # This nees to be disabled if you used the network_mode: host option.
+      # - "5000:5000"
       
     volumes:
       # Mount local directories into the container for persistent data
