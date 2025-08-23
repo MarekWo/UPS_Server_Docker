@@ -49,7 +49,8 @@ parse_wake_hosts() {
     local current_section=""
     local wake_hosts_info=()
     
-    while IFS= read -r line; do
+    # Use a more robust method to handle files without trailing newlines
+    while IFS= read -r line || [[ -n "$line" ]]; do
         # Skip comments and empty lines
         [[ "$line" =~ ^[[:space:]]*# || -z "$line" ]] && continue
         

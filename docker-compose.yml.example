@@ -1,6 +1,6 @@
 # Docker Compose file for the UPS Server application
 # Version: '3.8' specifies the file format version.
-version: '3.8'
+# version: '3.8'
 
 services:
   # Define our main service, which we'll call 'ups-server'
