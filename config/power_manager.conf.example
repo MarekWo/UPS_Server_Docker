@@ -5,21 +5,37 @@
 # Example: Smart plugs, IoT devices, a printer, etc.
 SENTINEL_HOSTS="192.168.1.11 192.168.1.12 192.168.1.13 192.168.1.14"
 
-# A space-separated list of servers to wake up after power is restored.
-# Format: "IP_ADDRESS;MAC_ADDRESS"
-# Ensure MAC addresses use colons.
-WAKE_HOSTS="192.168.1.12;00:11:32:f8:af:9f 192.168.131.13;00:11:32:2c:31:42"
-
 # The time in minutes to wait after power is restored before sending WoL packets.
 # This prevents waking servers during unstable power conditions (flickering).
 WOL_DELAY_MINUTES=5
 
-# The name of the virtual UPS as defined in /etc/nut/ups.conf
-UPS_NAME="ups"
-
 # The path to the dummy-ups driver's state file
 UPS_STATE_FILE="/var/run/nut/virtual.device"
 
-# (Optional) The broadcast address for the WoL packets.
-# If commented out, the script will try to use a default. It's best to set this.
-BROADCAST_IP="192.168.1.255"
+# Default broadcast address for WoL packets if not specified per host
+DEFAULT_BROADCAST_IP="192.168.1.255"
+
+# === WAKE-ON-LAN HOST DEFINITIONS ===
+# Define each host that should be awakened after power restoration
+# Each host should have its own section with the following parameters:
+# NAME - A descriptive name for the host (for logging purposes)
+# IP - The IP address of the host
+# MAC - The MAC address of the host (use colons as separators)
+# BROADCAST_IP - (Optional) Specific broadcast IP for this host
+
+[WAKE_HOST_1]
+NAME=Synology NAS
+IP=192.168.2.12
+MAC=00:11:32:f8:af:9f
+BROADCAST_IP=192.168.2.255
+
+[WAKE_HOST_2]
+NAME=Proxmox Virtual Environment
+IP=192.168.1.13
+MAC=00:11:32:2c:31:42
+
+[WAKE_HOST_3]
+NAME=File Server
+IP=192.168.1.15
+MAC=00:11:32:aa:bb:cc
+BROADCAST_IP=192.168.1.255

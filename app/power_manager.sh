@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Power Manager for Dummy NUT Server (v1.0.2)
+# Power Manager for Dummy NUT Server (v1.0.3)
 #
 # Author: Marek Wojtaszek (Enhancements by Gemini)
 # GitHub: https://github.com/MarekWo/
@@ -13,6 +13,8 @@
 #
 # v1.0.2 Change: Switched to sequential pinging to prevent race conditions
 # and ensure consistent logging, especially in containerized environments.
+# v1.0.3 Change: Enhanced configuration format for WAKE_HOSTS with sections
+# and added support for per-host broadcast IPs and descriptive names.
 #
 ################################################################################
 
@@ -41,6 +43,42 @@ log() {
     logger -p "user.$level" -t "PowerManager" -- "$msg"
 }
 
+# === FUNCTION TO PARSE WAKE HOSTS FROM CONFIG ===
+parse_wake_hosts() {
+    local config_file="$1"
+    local current_section=""
+    local wake_hosts_info=()
+    
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        [[ "$line" =~ ^[[:space:]]*# || -z "$line" ]] && continue
+        
+        # Check for section headers [WAKE_HOST_X]
+        if [[ "$line" =~ ^\[WAKE_HOST_[0-9]+\]$ ]]; then
+            current_section=$(echo "$line" | tr -d '[]')
+            continue
+        fi
+        
+        # Only process lines within WAKE_HOST sections
+        if [[ "$current_section" =~ ^WAKE_HOST_[0-9]+$ ]]; then
+            # Parse key=value pairs
+            if [[ "$line" =~ ^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+                
+                # Store values with section prefix
+                declare -g "${current_section}_${key}=$value"
+            fi
+        fi
+    done < "$config_file"
+}
+
+# === FUNCTION TO GET ALL WAKE HOST SECTIONS ===
+get_wake_host_sections() {
+    # Find all WAKE_HOST section variables
+    compgen -v | grep "^WAKE_HOST_[0-9]\+_NAME$" | sed 's/_NAME$//' | sort -V
+}
+
 # === SCRIPT START ===
 log "info" "--- Power check initiated ---"
 
@@ -49,7 +87,12 @@ if [ ! -f "$CONFIG_FILE" ]; then
     log "err" "CRITICAL ERROR: Configuration file not found at $CONFIG_FILE. Exiting."
     exit 1
 fi
+
+# Parse the main configuration variables (non-section)
 source "$CONFIG_FILE"
+
+# Parse wake host sections
+parse_wake_hosts "$CONFIG_FILE"
 
 # === CHECK SENTINEL HOSTS AVAILABILITY ===
 log "info" "Pinging sentinel hosts: $SENTINEL_HOSTS"
@@ -105,16 +148,32 @@ else
             if [ "$TIME_ELAPSED" -ge "$DELAY_SECONDS" ]; then
                 log "info" "WoL delay has passed. Initiating wake-up sequence for servers."
 
-                for HOST_INFO in $WAKE_HOSTS; do
-                    IP=$(echo "$HOST_INFO" | cut -d';' -f1)
-                    MAC=$(echo "$HOST_INFO" | cut -d';' -f2)
+                # Process each WAKE_HOST section
+                for section in $(get_wake_host_sections); do
+                    # Get variables for this section
+                    name_var="${section}_NAME"
+                    ip_var="${section}_IP"
+                    mac_var="${section}_MAC"
+                    broadcast_var="${section}_BROADCAST_IP"
+                    
+                    # Get values (using indirect variable expansion)
+                    name="${!name_var:-Unknown Host}"
+                    ip="${!ip_var}"
+                    mac="${!mac_var}"
+                    broadcast_ip="${!broadcast_var:-$DEFAULT_BROADCAST_IP}"
+                    
+                    # Skip if essential info is missing
+                    if [[ -z "$ip" || -z "$mac" ]]; then
+                        log "warn" "Skipping $name - missing IP or MAC address in configuration."
+                        continue
+                    fi
 
                     # Check if the target server is offline before sending WoL packet
-                    if ! $PING_CMD -c 1 -W 1 "$IP" &> /dev/null; then
-                        log "info" "Server $IP is offline. Sending WoL packet to $MAC."
-                        $WAKEONLAN_CMD -i "${BROADCAST_IP:-192.168.1.255}" "$MAC"
+                    if ! $PING_CMD -c 1 -W 1 "$ip" &> /dev/null; then
+                        log "info" "Server '$name' ($ip) is offline. Sending WoL packet to $mac via $broadcast_ip."
+                        $WAKEONLAN_CMD -i "$broadcast_ip" "$mac"
                     else
-                        log "info" "Server $IP is already online."
+                        log "info" "Server '$name' ($ip) is already online."
                     fi
                 done
 

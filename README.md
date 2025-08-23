@@ -83,11 +83,12 @@ The logic is simple but effective:
 
 3.  **Configure the Server:**
     All configuration is done by editing the files in the `./config/` directory.
-      * **`power_manager.conf`**:
+      * **`power_manager.conf`**: This file controls the core logic of the power monitoring script.
           * `SENTINEL_HOSTS`: A space-separated list of IPs for your sentinel devices.
-          * `WAKE_HOSTS`: A space-separated list of servers to wake up, in `IP;MAC` format.
-          * `WOL_DELAY_MINUTES`: Recommended to be 5-10 minutes.
-          * `BROADCAST_IP`: The broadcast address for your server subnet.
+          * `WOL_DELAY_MINUTES`: The time in minutes to wait after power is restored before sending WoL packets.
+          * `UPS_STATE_FILE`: The path to the state file used by the `dummy-ups` driver. **This must match the `port` setting in `config/nut/ups.conf`**. The default is `/var/run/nut/virtual.device`.
+          * `DEFAULT_BROADCAST_IP`: The default broadcast address for Wake-on-LAN packets.
+          * `[WAKE_HOST_X]`: Sections defining each server to wake up. Each section requires `NAME`, `IP`, and `MAC`. `BROADCAST_IP` is optional and overrides the default.
       * **`upshub.conf`**:
           * Define each client by its IP address in a section header (e.g., `[192.168.1.100]`).
           * Set `SHUTDOWN_DELAY_MINUTES` for each client. The `UPS_NAME` is now generated automatically by the API.

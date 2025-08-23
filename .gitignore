@@ -13,3 +13,5 @@ logs/
 
 # Ignore local environment file
 .env
+
+*.pdf
