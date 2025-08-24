@@ -14,6 +14,8 @@ logs/
 # Ignore local environment file
 .env
 
-*.pdf
 *.bkp
+*.svg
 *.drawio
+*.docx
+*.odt
