@@ -3,13 +3,12 @@
 
 """
 UPS Server Web GUI
-Author: Claude
-Description: A web interface for managing UPS Server configuration
+Author: MarekWo, Claude
+Description: A web interface for managing UPS Server configuration with unified power_manager.conf
 """
 
 import os
 import sys
-import configparser
 import subprocess
 import ipaddress
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
@@ -24,7 +23,6 @@ app.secret_key = 'ups_server_gui_secret_key_change_in_production'
 
 # --- Configuration ---
 POWER_MANAGER_CONFIG = "/etc/nut/power_manager.conf"
-UPSHUB_CONFIG = "/etc/nut/upshub.conf"
 PING_CMD = "/bin/ping"
 WAKEONLAN_CMD = "/usr/bin/wakeonlan"
 
@@ -97,19 +95,6 @@ def write_power_manager_config(config, wake_hosts):
             for key, value in params.items():
                 f.write(f"{key}={value}\n")
 
-def read_upshub_config():
-    """Read upshub.conf file"""
-    config = configparser.ConfigParser()
-    config.optionxform = str
-    if os.path.exists(UPSHUB_CONFIG):
-        config.read(UPSHUB_CONFIG)
-    return config
-
-def write_upshub_config(config):
-    """Write upshub.conf file"""
-    with open(UPSHUB_CONFIG, 'w') as f:
-        config.write(f)
-
 def ping_host(ip):
     """Check if host is online"""
     try:
@@ -145,6 +130,18 @@ def validate_mac(mac):
     mac_pattern = re.compile(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')
     return bool(mac_pattern.match(mac))
 
+def get_ups_clients_from_wake_hosts(wake_hosts):
+    """Extract UPS clients (hosts with SHUTDOWN_DELAY_MINUTES) from wake hosts"""
+    ups_clients = {}
+    for section, params in wake_hosts.items():
+        if 'SHUTDOWN_DELAY_MINUTES' in params and 'IP' in params:
+            ups_clients[section] = {
+                'ip': params['IP'],
+                'name': params.get('NAME', section),
+                'shutdown_delay': params['SHUTDOWN_DELAY_MINUTES']
+            }
+    return ups_clients
+
 # --- Routes ---
 
 @app.route('/')
@@ -153,7 +150,9 @@ def index():
     try:
         # Read configurations
         pm_config, wake_hosts = read_power_manager_config()
-        upshub_config = read_upshub_config()
+        
+        # Get UPS clients from wake hosts
+        ups_clients = get_ups_clients_from_wake_hosts(wake_hosts)
         
         # Get status information
         sentinel_hosts_raw = pm_config.get('SENTINEL_HOSTS', '').split()
@@ -183,7 +182,7 @@ def index():
         return render_template('dashboard.html',
                              pm_config=pm_config,
                              wake_hosts=wake_hosts,
-                             upshub_config=upshub_config,
+                             ups_clients=ups_clients,
                              sentinel_hosts=sentinel_hosts,
                              sentinel_status=sentinel_status,
                              wake_host_status=wake_host_status)
@@ -195,12 +194,12 @@ def index():
 def config():
     """Configuration page"""
     pm_config, wake_hosts = read_power_manager_config()
-    upshub_config = read_upshub_config()
+    ups_clients = get_ups_clients_from_wake_hosts(wake_hosts)
     
     return render_template('config.html',
                          pm_config=pm_config,
                          wake_hosts=wake_hosts,
-                         upshub_config=upshub_config)
+                         ups_clients=ups_clients)
 
 @app.route('/save_main_config', methods=['POST'])
 def save_main_config():
@@ -261,6 +260,7 @@ def add_wake_host():
         ip = request.form.get('ip', '').strip()
         mac = request.form.get('mac', '').strip()
         broadcast_ip = request.form.get('broadcast_ip', '').strip()
+        shutdown_delay = request.form.get('shutdown_delay', '').strip()
         
         # Validate data
         if not name or not ip or not mac:
@@ -278,6 +278,13 @@ def add_wake_host():
         if broadcast_ip and not validate_ip(broadcast_ip):
             flash(f'Invalid broadcast IP address: {broadcast_ip}', 'error')
             return redirect(url_for('config'))
+        
+        if shutdown_delay:
+            try:
+                int(shutdown_delay)
+            except:
+                flash('Shutdown delay must be a number', 'error')
+                return redirect(url_for('config'))
         
         # Add new wake host
         wake_hosts[section_name] = {
@@ -288,12 +295,15 @@ def add_wake_host():
         
         if broadcast_ip:
             wake_hosts[section_name]['BROADCAST_IP'] = broadcast_ip
+            
+        if shutdown_delay:
+            wake_hosts[section_name]['SHUTDOWN_DELAY_MINUTES'] = shutdown_delay
         
         write_power_manager_config(pm_config, wake_hosts)
-        flash(f'Wake host "{name}" added successfully!', 'success')
+        flash(f'Host "{name}" added successfully!', 'success')
         
     except Exception as e:
-        flash(f'Error adding wake host: {str(e)}', 'error')
+        flash(f'Error adding host: {str(e)}', 'error')
     
     return redirect(url_for('config'))
 
@@ -304,7 +314,7 @@ def edit_wake_host(section):
         pm_config, wake_hosts = read_power_manager_config()
         
         if section not in wake_hosts:
-            flash('Wake host not found', 'error')
+            flash('Host not found', 'error')
             return redirect(url_for('config'))
         
         # Get form data
@@ -312,6 +322,7 @@ def edit_wake_host(section):
         ip = request.form.get('ip', '').strip()
         mac = request.form.get('mac', '').strip()
         broadcast_ip = request.form.get('broadcast_ip', '').strip()
+        shutdown_delay = request.form.get('shutdown_delay', '').strip()
         
         # Validate data
         if not name or not ip or not mac:
@@ -330,6 +341,13 @@ def edit_wake_host(section):
             flash(f'Invalid broadcast IP address: {broadcast_ip}', 'error')
             return redirect(url_for('config'))
         
+        if shutdown_delay:
+            try:
+                int(shutdown_delay)
+            except:
+                flash('Shutdown delay must be a number', 'error')
+                return redirect(url_for('config'))
+        
         # Update wake host
         wake_hosts[section] = {
             'NAME': name,
@@ -339,12 +357,15 @@ def edit_wake_host(section):
         
         if broadcast_ip:
             wake_hosts[section]['BROADCAST_IP'] = broadcast_ip
+            
+        if shutdown_delay:
+            wake_hosts[section]['SHUTDOWN_DELAY_MINUTES'] = shutdown_delay
         
         write_power_manager_config(pm_config, wake_hosts)
-        flash(f'Wake host "{name}" updated successfully!', 'success')
+        flash(f'Host "{name}" updated successfully!', 'success')
         
     except Exception as e:
-        flash(f'Error updating wake host: {str(e)}', 'error')
+        flash(f'Error updating host: {str(e)}', 'error')
     
     return redirect(url_for('config'))
 
@@ -358,96 +379,12 @@ def delete_wake_host(section):
             name = wake_hosts[section].get('NAME', section)
             del wake_hosts[section]
             write_power_manager_config(pm_config, wake_hosts)
-            flash(f'Wake host "{name}" deleted successfully!', 'success')
+            flash(f'Host "{name}" deleted successfully!', 'success')
         else:
-            flash('Wake host not found', 'error')
+            flash('Host not found', 'error')
         
     except Exception as e:
-        flash(f'Error deleting wake host: {str(e)}', 'error')
-    
-    return redirect(url_for('config'))
-
-@app.route('/add_upshub_client', methods=['POST'])
-def add_upshub_client():
-    """Add new UPS Hub client"""
-    try:
-        upshub_config = read_upshub_config()
-        
-        ip = request.form.get('ip', '').strip()
-        shutdown_delay = request.form.get('shutdown_delay', '5').strip()
-        
-        if not ip:
-            flash('IP address is required', 'error')
-            return redirect(url_for('config'))
-        
-        if not validate_ip(ip):
-            flash(f'Invalid IP address: {ip}', 'error')
-            return redirect(url_for('config'))
-        
-        try:
-            int(shutdown_delay)
-        except:
-            flash('Shutdown delay must be a number', 'error')
-            return redirect(url_for('config'))
-        
-        if upshub_config.has_section(ip):
-            flash(f'Client {ip} already exists', 'error')
-            return redirect(url_for('config'))
-        
-        upshub_config.add_section(ip)
-        upshub_config.set(ip, 'SHUTDOWN_DELAY_MINUTES', shutdown_delay)
-        
-        write_upshub_config(upshub_config)
-        flash(f'UPS Hub client {ip} added successfully!', 'success')
-        
-    except Exception as e:
-        flash(f'Error adding UPS Hub client: {str(e)}', 'error')
-    
-    return redirect(url_for('config'))
-
-@app.route('/edit_upshub_client/<client_ip>', methods=['POST'])
-def edit_upshub_client(client_ip):
-    """Edit existing UPS Hub client"""
-    try:
-        upshub_config = read_upshub_config()
-        
-        if not upshub_config.has_section(client_ip):
-            flash('Client not found', 'error')
-            return redirect(url_for('config'))
-        
-        shutdown_delay = request.form.get('shutdown_delay', '5').strip()
-        
-        try:
-            int(shutdown_delay)
-        except:
-            flash('Shutdown delay must be a number', 'error')
-            return redirect(url_for('config'))
-        
-        upshub_config.set(client_ip, 'SHUTDOWN_DELAY_MINUTES', shutdown_delay)
-        
-        write_upshub_config(upshub_config)
-        flash(f'UPS Hub client {client_ip} updated successfully!', 'success')
-        
-    except Exception as e:
-        flash(f'Error updating UPS Hub client: {str(e)}', 'error')
-    
-    return redirect(url_for('config'))
-
-@app.route('/delete_upshub_client/<client_ip>', methods=['POST'])
-def delete_upshub_client(client_ip):
-    """Delete UPS Hub client"""
-    try:
-        upshub_config = read_upshub_config()
-        
-        if upshub_config.has_section(client_ip):
-            upshub_config.remove_section(client_ip)
-            write_upshub_config(upshub_config)
-            flash(f'UPS Hub client {client_ip} deleted successfully!', 'success')
-        else:
-            flash('Client not found', 'error')
-        
-    except Exception as e:
-        flash(f'Error deleting UPS Hub client: {str(e)}', 'error')
+        flash(f'Error deleting host: {str(e)}', 'error')
     
     return redirect(url_for('config'))
 
@@ -487,7 +424,9 @@ def get_status():
         sentinel_status = {}
         for host in sentinel_hosts:
             if host:
-                sentinel_status[host] = ping_host(host)
+                clean_host = host.strip().strip('"').strip("'")
+                if clean_host:
+                    sentinel_status[clean_host] = ping_host(clean_host)
         
         # Check wake hosts
         wake_host_status = {}

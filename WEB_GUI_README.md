@@ -1,165 +1,238 @@
-# Web GUI dla UPS Power Management Server
+# Web GUI for UPS Power Management Server
 
-## Przegląd
+## Overview
 
-Web GUI dla UPS Server umożliwia łatwe zarządzanie konfiguracją systemu przez interfejs webowy dostępny z przeglądarki. Interfejs jest w pełni responsywny i zoptymalizowany dla urządzeń mobilnych.
+The Web GUI for UPS Server provides easy management of system configuration through a web interface accessible from any browser. The interface is fully responsive and optimized for both desktop and mobile devices.
 
-## Funkcjonalności Web GUI
+## Web GUI Features
 
 ### 🏠 Dashboard
-- **Przegląd systemu**: Wyświetla statystyki liczbowe (liczba hostów, sentinel, klientów)
-- **Status hostów sentinel**: Monitorowanie na żywo hostów używanych do wykrywania awarii zasilania
-- **Status zarządzanych hostów**: Wyświetla status online/offline wszystkich hostów z Wake-on-LAN
-- **Lista klientów UPS Hub**: Przegląd wszystkich klientów z konfiguracją opóźnień wyłączenia
-- **Automatyczne odświeżanie**: Status hostów jest automatycznie odświeżany co 30 sekund
-- **Wysyłanie WoL**: Przyciski do natychmiastowego wysłania sygnału Wake-on-LAN do wybranych hostów
+- **System Overview**: Displays numerical statistics (number of hosts, sentinels, clients)
+- **Sentinel Host Status**: Real-time monitoring of hosts used to detect power failures
+- **UPS Client Status**: Shows online/offline status of all UPS clients with shutdown delays
+- **Managed Host Status**: Displays status of all hosts with Wake-on-LAN capability
+- **Automatic Refresh**: Host status is automatically refreshed every 30 seconds
+- **One-Click WoL**: Buttons to instantly send Wake-on-LAN signals to selected hosts
 
-### ⚙️ Konfiguracja
-- **Konfiguracja główna**: Edycja parametrów systemowych (hosty sentinel, opóźnienie WoL, adres broadcast)
-- **Zarządzanie hostami Wake-on-LAN**: Dodawanie, edytowanie i usuwanie hostów z automatycznym wybudzaniem
-- **Zarządzanie klientami UPS Hub**: Konfiguracja klientów API z indywidualnymi opóźnieniami wyłączenia
-- **Walidacja danych**: Automatyczna walidacja adresów IP i MAC z informacjami o błędach
-- **Formatowanie automatyczne**: Inteligentne formatowanie adresów MAC podczas wpisywania
+### ⚙️ Configuration
+- **Main Configuration**: Edit system parameters (sentinel hosts, WoL delay, broadcast address)
+- **Managed Host Management**: Add, edit, and remove hosts with Wake-on-LAN and UPS client functionality
+- **Data Validation**: Automatic validation of IP addresses and MAC addresses with error feedback
+- **Auto-formatting**: Intelligent MAC address formatting during input
+- **Unified Configuration**: Single interface for all host parameters including optional UPS client settings
 
-## Instalacja i Konfiguracja
+## Installation and Configuration
 
-### 1. Aktualizacja plików aplikacji
+### 1. Update Application Files
 
-Skopiuj nowe pliki do katalogu aplikacji:
+Copy the new files to your application directory:
 
 ```bash
-# Przejdź do katalogu aplikacji
+# Navigate to the application directory
 cd /opt/ups-server-docker/app
 
-# Stwórz katalog templates
+# Create templates directory
 mkdir -p templates
 
-# Skopiuj nowe pliki (web_gui.py, templates/base.html, templates/dashboard.html, templates/config.html)
+# Copy new files (web_gui.py, templates/base.html, templates/dashboard.html, templates/config.html)
 ```
 
-### 2. Aktualizacja Docker
+### 2. Docker Updates
 
-Zastąp istniejące pliki:
-- `entrypoint.sh` - dodaje uruchomienie Web GUI na porcie 80
-- `Dockerfile` - dodaje port 80 i katalog templates
-- `docker-compose.yml.example` - dokumentuje port 80
+Replace existing files:
+- `entrypoint.sh` - adds Web GUI startup on port 80
+- `Dockerfile` - adds port 80 and templates directory
+- `docker-compose.yml.example` - documents port 80
+- `api.py` - updated to use consolidated configuration
 
-### 3. Przebudowa kontenera
+### 3. Container Rebuild
 
 ```bash
-# Zatrzymaj istniejący kontener
+# Stop existing container
 docker compose down
 
-# Przebuduj i uruchom z nowymi plikami
+# Rebuild and start with new files
 docker compose up --build -d
 ```
 
-## Dostęp do Web GUI
+## Accessing the Web GUI
 
-Po uruchomieniu kontenera, Web GUI będzie dostępne pod adresem:
+After starting the container, the Web GUI will be available at:
 
 ```
-http://<IP_SERWERA_UPS>
+http://<UPS_SERVER_IP>
 ```
 
-Na przykład, jeśli Twój serwer UPS ma IP `192.168.1.10`, otwórz:
+For example, if your UPS server has IP `192.168.1.10`, open:
 
 ```
 http://192.168.1.10
 ```
 
-## Porty i Usługi
+## Ports and Services
 
-Po aktualizacji kontener będzie udostępniał następujące usługi:
+After the update, the container will provide the following services:
 
-- **Port 80**: Web GUI (nowy)
-- **Port 5000**: REST API (istniejący)
-- **Port 3493**: NUT Server (istniejący)
+- **Port 80**: Web GUI (new)
+- **Port 5000**: REST API (existing)
+- **Port 3493**: NUT Server (existing)
 
-## Responsywność i Urządzenia Mobilne
+## Configuration Management
 
-Web GUI został zaprojektowany z myślą o dostępności na wszystkich urządzeniach:
+### Unified Configuration File
 
-### 📱 Funkcje mobilne:
-- **Responsywny design**: Automatyczne dopasowanie do rozmiaru ekranu
-- **Touch-friendly**: Duże przyciski i elementy łatwe do dotykania
-- **Przesuwane tabele**: Tabele z dużą ilością danych są przewijalne poziomo
-- **Zoptymalizowane formularze**: Modalowe okna dialogowe dopasowane do ekranów mobilnych
-- **Czytelne ikony**: Font Awesome z wyraźnymi ikonami statusu
+All system configuration is now managed through a single file: `power_manager.conf`. This file contains:
 
-### 💻 Funkcje desktop:
-- **Hover effects**: Animacje przy najechaniu myszką
-- **Zaawansowane tabele**: Pełne tabele z większą ilością informacji
-- **Szersze układy**: Wykorzystanie pełnej szerokości ekranu
+- **Main Settings**: Sentinel hosts, WoL delay, broadcast addresses
+- **Host Definitions**: Each `[WAKE_HOST_X]` section can include:
+  - `NAME`: Descriptive name
+  - `IP`: Host IP address
+  - `MAC`: MAC address for Wake-on-LAN
+  - `BROADCAST_IP`: Optional specific broadcast IP
+  - `SHUTDOWN_DELAY_MINUTES`: Optional - makes host a UPS client
 
-## Bezpieczeństwo
+### Example Configuration
 
-### ⚠️ Ważne uwagi bezpieczeństwa:
+```bash
+# === CONFIGURATION FILE FOR POWER_MANAGER.SH ===
 
-1. **Brak uwierzytelniania**: Web GUI nie posiada systemu logowania. Dostęp jest otwarty dla każdego, kto zna adres IP serwera.
+SENTINEL_HOSTS=192.168.1.11 192.168.1.12 192.168.1.13
+WOL_DELAY_MINUTES=5
+DEFAULT_BROADCAST_IP=192.168.1.255
+UPS_STATE_FILE=/var/run/nut/virtual.device
 
-2. **Użycie wewnętrzne**: Interface jest przeznaczony do użytku w bezpiecznej sieci wewnętrznej.
+# === WAKE-ON-LAN HOST DEFINITIONS ===
 
-3. **Brak HTTPS**: Komunikacja odbywa się przez niezaszyfrowane HTTP.
+# UPS Client (with shutdown delay)
+[WAKE_HOST_1]
+NAME=Synology NAS
+IP=192.168.1.12
+MAC=00:11:32:f8:af:9f
+SHUTDOWN_DELAY_MINUTES=10
 
-### 🔒 Rekomendacje bezpieczeństwa:
+# WoL-only host (no UPS functionality)
+[WAKE_HOST_2]
+NAME=File Server
+IP=192.168.1.15
+MAC=00:11:32:aa:bb:cc
+```
 
-- Użyj Web GUI tylko w zaufanej sieci lokalnej
-- Rozważ ograniczenie dostępu przez firewall
-- Dla środowisk produkcyjnych rozważ dodanie uwierzytelniania
+## Responsive Design and Mobile Optimization
 
-## Rozwiązywanie problemów
+The Web GUI is designed for accessibility across all devices:
 
-### Web GUI nie ładuje się
-1. Sprawdź, czy kontener działa: `docker ps`
-2. Sprawdź logi: `docker compose logs`
-3. Sprawdź dostępność portu 80: `curl http://localhost`
+### 📱 Mobile Features:
+- **Responsive design**: Automatic adaptation to screen size
+- **Touch-friendly**: Large buttons and elements easy to tap
+- **Scrollable tables**: Tables with large amounts of data are horizontally scrollable
+- **Optimized forms**: Modal dialogs adapted to mobile screens
+- **Clear icons**: Font Awesome icons with clear status indicators
 
-### Nie można zapisać konfiguracji
-1. Sprawdź uprawnienia do plików konfiguracyjnych
-2. Sprawdź logi aplikacji: `docker compose logs ups-server`
-3. Sprawdź, czy pliki konfiguracyjne istnieją w `./config/`
+### 💻 Desktop Features:
+- **Hover effects**: Animations on mouse hover
+- **Advanced tables**: Full tables with more information
+- **Wide layouts**: Full utilization of screen width
+- **Keyboard navigation**: Full keyboard accessibility
 
-### Status hostów nie odświeża się
-1. Sprawdź połączenie sieciowe z kontenerem
-2. Sprawdź logi przeglądarki (F12 -> Console)
-3. Sprawdź, czy endpoint `/status` odpowiada: `curl http://<SERVER_IP>/status`
+## Security
 
-### Problemy z Wake-on-LAN
-1. Upewnij się, że używasz `network_mode: host` w docker-compose.yml
-2. Sprawdź, czy `wakeonlan` jest zainstalowane w kontenerze
-3. Sprawdź poprawność adresów MAC i broadcast IP
+### ⚠️ Important Security Notes:
 
-## Funkcje zaawansowane
+1. **No Authentication**: The Web GUI does not have a login system. Access is open to anyone who knows the server's IP address.
 
-### Automatyczne odświeżanie statusu
-- Status wszystkich hostów jest odświeżany automatycznie co 30 sekund
-- Możesz ręcznie odświeżyć status klikając przycisk "Odśwież"
+2. **Internal Use**: The interface is designed for use within a secure internal network.
 
-### Walidacja formularzy
-- Adresy IP są automatycznie walidowane
-- Adresy MAC są formatowane podczas wpisywania (XX:XX:XX:XX:XX:XX)
-- Błędne dane są podświetlane z komunikatami błędów
+3. **No HTTPS**: Communication occurs over unencrypted HTTP.
 
-### Powiadomienia
-- Wszystkie akcje (zapisywanie, dodawanie, usuwanie) pokazują powiadomienia
-- Powiadomienia znikają automatycznie po 3-5 sekundach
-- Błędy są wyświetlane w kolorze czerwonym, sukces w zielonym
+### 🔒 Security Recommendations:
 
-## API Endpoints używane przez Web GUI
+- Use the Web GUI only on trusted local networks
+- Consider restricting access through firewall rules
+- For production environments, consider adding authentication
 
-Web GUI korzysta z następujących endpointów:
+## Troubleshooting
 
-- `GET /` - Dashboard główny
-- `GET /config` - Strona konfiguracji
-- `POST /save_main_config` - Zapisywanie konfiguracji głównej
-- `POST /add_wake_host` - Dodawanie nowego hosta WoL
-- `POST /edit_wake_host/<section>` - Edytowanie hosta WoL
-- `POST /delete_wake_host/<section>` - Usuwanie hosta WoL
-- `POST /add_upshub_client` - Dodawanie klienta UPS Hub
-- `POST /edit_upshub_client/<ip>` - Edytowanie klienta UPS Hub
-- `POST /delete_upshub_client/<ip>` - Usuwanie klienta UPS Hub
-- `GET /wol/<section>` - Wysyłanie Wake-on-LAN
-- `GET /status` - Pobieranie aktualnego statusu hostów (JSON)
+### Web GUI doesn't load
+1. Check if container is running: `docker ps`
+2. Check logs: `docker compose logs`
+3. Check port 80 availability: `curl http://localhost`
 
-Wszystkie endpointy Web GUI są niezależne od istniejącego REST API na porcie 5000, które nadal działa bez zmian.
+### Cannot save configuration
+1. Check permissions on configuration files
+2. Check application logs: `docker compose logs ups-server`
+3. Verify configuration files exist in `./config/`
+
+### Host status doesn't refresh
+1. Check network connectivity from container
+2. Check browser logs (F12 -> Console)
+3. Verify `/status` endpoint responds: `curl http://<SERVER_IP>/status`
+
+### Wake-on-LAN problems
+1. Ensure you're using `network_mode: host` in docker-compose.yml
+2. Check if `wakeonlan` is installed in the container
+3. Verify MAC addresses and broadcast IP addresses are correct
+
+## Advanced Features
+
+### Automatic Status Refresh
+- Status of all hosts is automatically refreshed every 30 seconds
+- You can manually refresh status by clicking the "Refresh" button
+
+### Form Validation
+- IP addresses are automatically validated
+- MAC addresses are formatted during input (XX:XX:XX:XX:XX:XX)
+- Invalid data is highlighted with error messages
+
+### Notifications
+- All actions (saving, adding, deleting) show notifications
+- Notifications automatically disappear after 3-5 seconds
+- Errors are displayed in red, success messages in green
+
+## API Integration
+
+The Web GUI uses the same REST API that serves UPS clients:
+
+- `GET /config?ip=<client_ip>` - Returns UPS client configuration
+- `GET /upsc` - Returns live UPS status
+- `GET /status` - Returns current host status (used by Web GUI)
+
+Example API response for a UPS client:
+```bash
+curl -H "Authorization: Bearer <token>" "http://server:5000/config?ip=192.168.1.12"
+```
+```json
+{
+  "SHUTDOWN_DELAY_MINUTES": "10",
+  "UPS_NAME": "ups@192.168.1.10"
+}
+```
+
+## Migration from Previous Versions
+
+If upgrading from a version that used separate `upshub.conf`:
+
+1. **Backup existing configuration**:
+   ```bash
+   cp config/power_manager.conf config/power_manager.conf.backup
+   ```
+
+2. **Add UPS client settings**: For each host that should be a UPS client, add `SHUTDOWN_DELAY_MINUTES` to its `[WAKE_HOST_X]` section.
+
+3. **Remove old file**: The `upshub.conf` file is no longer needed.
+
+4. **Update Web GUI**: Replace `web_gui.py` and templates with the unified versions.
+
+## Web GUI Endpoints
+
+The Web GUI provides these endpoints for management:
+
+- `GET /` - Main dashboard
+- `GET /config` - Configuration page
+- `POST /save_main_config` - Save main configuration
+- `POST /add_wake_host` - Add new managed host
+- `POST /edit_wake_host/<section>` - Edit managed host
+- `POST /delete_wake_host/<section>` - Delete managed host
+- `GET /wol/<section>` - Send Wake-on-LAN signal
+- `GET /status` - Get current host status (JSON)
+
+All Web GUI endpoints are independent of the existing REST API on port 5000, which continues to work without changes for UPS clients.

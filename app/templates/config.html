@@ -46,7 +46,7 @@
 <!-- Wake Hosts Configuration -->
 <div class="config-section">
     <h4 class="section-title">
-        <i class="fas fa-server me-2"></i>Zarządzane Hosty (Wake-on-LAN)
+        <i class="fas fa-server me-2"></i>Zarządzane Hosty
         <button type="button" class="btn btn-success btn-sm float-end" data-bs-toggle="modal" data-bs-target="#addWakeHostModal">
             <i class="fas fa-plus"></i> Dodaj Host
         </button>
@@ -61,6 +61,7 @@
                         <th>Adres IP</th>
                         <th>Adres MAC</th>
                         <th>Broadcast IP</th>
+                        <th>Opóźnienie UPS</th>
                         <th>Akcje</th>
                     </tr>
                 </thead>
@@ -72,7 +73,14 @@
                         <td><code>{{ host.get('MAC', '') }}</code></td>
                         <td><code>{{ host.get('BROADCAST_IP', pm_config.get('DEFAULT_BROADCAST_IP', '')) }}</code></td>
                         <td>
-                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editWakeHost('{{ section }}', '{{ host.get('NAME', '') }}', '{{ host.get('IP', '') }}', '{{ host.get('MAC', '') }}', '{{ host.get('BROADCAST_IP', '') }}')" title="Edytuj">
+                            {% if host.get('SHUTDOWN_DELAY_MINUTES') %}
+                                <span class="badge bg-success">{{ host.get('SHUTDOWN_DELAY_MINUTES') }} min</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Brak</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editWakeHost('{{ section }}', '{{ host.get('NAME', '') }}', '{{ host.get('IP', '') }}', '{{ host.get('MAC', '') }}', '{{ host.get('BROADCAST_IP', '') }}', '{{ host.get('SHUTDOWN_DELAY_MINUTES', '') }}')" title="Edytuj">
                                 <i class="fas fa-edit"></i>
                             </button>
                             <form method="POST" action="{{ url_for('delete_wake_host', section=section) }}" style="display: inline;" onsubmit="return confirm('Czy na pewno chcesz usunąć host {{ host.get('NAME', section) }}?')">
@@ -93,61 +101,6 @@
             <p>Dodaj hosty, które mają być automatycznie wybudzane po przywróceniu zasilania.</p>
             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addWakeHostModal">
                 <i class="fas fa-plus me-1"></i>Dodaj Pierwszy Host
-            </button>
-        </div>
-    {% endif %}
-</div>
-
-<!-- UPS Hub Clients Configuration -->
-<div class="config-section">
-    <h4 class="section-title">
-        <i class="fas fa-plug me-2"></i>Klienci UPS Hub
-        <button type="button" class="btn btn-success btn-sm float-end" data-bs-toggle="modal" data-bs-target="#addUpsHubClientModal">
-            <i class="fas fa-plus"></i> Dodaj Klienta
-        </button>
-    </h4>
-    
-    {% if upshub_config.sections() %}
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>Adres IP Klienta</th>
-                        <th>Opóźnienie Wyłączenia (minuty)</th>
-                        <th>Akcje</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for client_ip in upshub_config.sections() %}
-                    <tr>
-                        <td><code>{{ client_ip }}</code></td>
-                        <td>
-                            <span class="badge bg-info">
-                                {{ upshub_config.get(client_ip, 'SHUTDOWN_DELAY_MINUTES', fallback='5') }} minut
-                            </span>
-                        </td>
-                        <td>
-                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editUpsHubClient('{{ client_ip }}', '{{ upshub_config.get(client_ip, 'SHUTDOWN_DELAY_MINUTES', fallback='5') }}')" title="Edytuj">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <form method="POST" action="{{ url_for('delete_upshub_client', client_ip=client_ip) }}" style="display: inline;" onsubmit="return confirm('Czy na pewno chcesz usunąć klienta {{ client_ip }}?')">
-                                <button type="submit" class="btn btn-danger btn-sm" title="Usuń">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    {% else %}
-        <div class="text-center text-muted py-4">
-            <i class="fas fa-plug fa-3x mb-3"></i>
-            <h5>Brak skonfigurowanych klientów</h5>
-            <p>Dodaj klientów UPS, którzy będą otrzymywać konfigurację poprzez API.</p>
-            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUpsHubClientModal">
-                <i class="fas fa-plus me-1"></i>Dodaj Pierwszego Klienta
             </button>
         </div>
     {% endif %}
@@ -182,6 +135,11 @@
                         <label for="add_broadcast_ip" class="form-label">Broadcast IP (opcjonalne)</label>
                         <input type="text" class="form-control" id="add_broadcast_ip" name="broadcast_ip" placeholder="192.168.1.255">
                         <div class="form-text">Adres broadcast dla tego hosta (pozostaw puste, aby użyć domyślnego).</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="add_shutdown_delay" class="form-label">Opóźnienie wyłączenia UPS (minuty, opcjonalne)</label>
+                        <input type="number" class="form-control" id="add_shutdown_delay" name="shutdown_delay" min="1" max="60" placeholder="5">
+                        <div class="form-text">Jeśli ustawione, host będzie klientem UPS z określonym opóźnieniem wyłączenia.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -219,64 +177,10 @@
                         <label for="edit_broadcast_ip" class="form-label">Broadcast IP (opcjonalne)</label>
                         <input type="text" class="form-control" id="edit_broadcast_ip" name="broadcast_ip">
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
-                    <button type="submit" class="btn btn-warning">Zapisz Zmiany</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Add UPS Hub Client Modal -->
-<div class="modal fade" id="addUpsHubClientModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Dodaj Klienta UPS Hub</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST" action="{{ url_for('add_upshub_client') }}">
-                <div class="modal-body">
                     <div class="mb-3">
-                        <label for="add_client_ip" class="form-label">Adres IP Klienta</label>
-                        <input type="text" class="form-control" id="add_client_ip" name="ip" placeholder="192.168.1.200" required>
-                        <div class="form-text">Adres IP klienta, który będzie pobierał konfigurację z API.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="add_shutdown_delay" class="form-label">Opóźnienie Wyłączenia (minuty)</label>
-                        <input type="number" class="form-control" id="add_shutdown_delay" name="shutdown_delay" min="1" max="60" value="5" required>
-                        <div class="form-text">Czas oczekiwania przed wyłączeniem tego klienta po wykryciu awarii zasilania.</div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
-                    <button type="submit" class="btn btn-success">Dodaj Klienta</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Edit UPS Hub Client Modal -->
-<div class="modal fade" id="editUpsHubClientModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Edytuj Klienta UPS Hub</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST" id="editUpsHubClientForm">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Adres IP Klienta</label>
-                        <input type="text" class="form-control" id="edit_client_ip_display" readonly>
-                        <div class="form-text">Adres IP nie może być zmieniony. Usuń i dodaj ponownie klienta, aby zmienić IP.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="edit_client_shutdown_delay" class="form-label">Opóźnienie Wyłączenia (minuty)</label>
-                        <input type="number" class="form-control" id="edit_client_shutdown_delay" name="shutdown_delay" min="1" max="60" required>
+                        <label for="edit_shutdown_delay" class="form-label">Opóźnienie wyłączenia UPS (minuty, opcjonalne)</label>
+                        <input type="number" class="form-control" id="edit_shutdown_delay" name="shutdown_delay" min="1" max="60">
+                        <div class="form-text">Jeśli ustawione, host będzie klientem UPS z określonym opóźnieniem wyłączenia.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -291,20 +195,14 @@
 
 {% block extra_scripts %}
 <script>
-function editWakeHost(section, name, ip, mac, broadcastIp) {
+function editWakeHost(section, name, ip, mac, broadcastIp, shutdownDelay) {
     document.getElementById('edit_name').value = name;
     document.getElementById('edit_ip').value = ip;
     document.getElementById('edit_mac').value = mac;
     document.getElementById('edit_broadcast_ip').value = broadcastIp;
+    document.getElementById('edit_shutdown_delay').value = shutdownDelay;
     document.getElementById('editWakeHostForm').action = '/edit_wake_host/' + section;
     new bootstrap.Modal(document.getElementById('editWakeHostModal')).show();
-}
-
-function editUpsHubClient(clientIp, shutdownDelay) {
-    document.getElementById('edit_client_ip_display').value = clientIp;
-    document.getElementById('edit_client_shutdown_delay').value = shutdownDelay;
-    document.getElementById('editUpsHubClientForm').action = '/edit_upshub_client/' + clientIp;
-    new bootstrap.Modal(document.getElementById('editUpsHubClientModal')).show();
 }
 
 // Validate MAC address format
@@ -342,7 +240,6 @@ formatIP(document.getElementById('add_ip'));
 formatIP(document.getElementById('add_broadcast_ip'));
 formatIP(document.getElementById('edit_ip'));
 formatIP(document.getElementById('edit_broadcast_ip'));
-formatIP(document.getElementById('add_client_ip'));
 
 // Form validation
 document.addEventListener('DOMContentLoaded', function() {

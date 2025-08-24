@@ -3,9 +3,9 @@
 
 """
 UPS Hub REST API
-Author: Gemini
+Author: MarekWo
 Description: A lightweight Flask-based REST API to serve configuration
-             to UPS monitor clients from a central INI file.
+             to UPS monitor clients from a central power_manager.conf file.
 """
 
 import configparser
@@ -18,7 +18,7 @@ from flask import Flask, jsonify, request, abort
 # IMPORTANT: Change this to a long, random string in your actual deployment.
 API_TOKEN = "ggJVLx8MtcZvs84DVrSxzsiJPb5VoR4EMGUu"
 UPSC_CMD = "/usr/bin/upsc"
-UPSHUB_CONFIG_FILE = "/etc/nut/upshub.conf"
+POWER_MANAGER_CONFIG = "/etc/nut/power_manager.conf"
 UPS_CONF_FILE = "/etc/nut/ups.conf"
 
 app = Flask(__name__)
@@ -76,6 +76,59 @@ def build_nested_dict(flat_dict):
             else:
                 d[final_key] = value
     return nested_dict
+
+def read_power_manager_config():
+    """
+    Read and parse power_manager.conf file to get both main config and wake hosts.
+    Returns tuple (main_config_dict, wake_hosts_dict).
+    """
+    config = {}
+    wake_hosts = {}
+    
+    if not os.path.exists(POWER_MANAGER_CONFIG):
+        return config, wake_hosts
+    
+    current_section = None
+    with open(POWER_MANAGER_CONFIG, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Check for section headers [WAKE_HOST_X]
+            if line.startswith('[WAKE_HOST_') and line.endswith(']'):
+                current_section = line[1:-1]  # Remove brackets
+                wake_hosts[current_section] = {}
+                continue
+            
+            # Parse key=value pairs
+            if '=' in line:
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                # Remove quotes from values if present
+                if value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                elif value.startswith("'") and value.endswith("'"):
+                    value = value[1:-1]
+                elif value.startswith('"'):
+                    value = value[1:]
+                elif value.endswith('"'):
+                    value = value[:-1]
+                elif value.startswith("'"):
+                    value = value[1:]
+                elif value.endswith("'"):
+                    value = value[:-1]
+                
+                if current_section:
+                    # This is a wake host parameter
+                    wake_hosts[current_section][key] = value
+                else:
+                    # This is a main config parameter
+                    config[key] = value
+    
+    return config, wake_hosts
 
 def get_client_ip():
     """
@@ -194,54 +247,53 @@ def get_config():
     # 1. --- Security Check: Validate API Token ---
     auth_header = request.headers.get('Authorization')
     if not auth_header or auth_header != f"Bearer {API_TOKEN}":
-        # Using abort() is a clean way to send standard HTTP error responses
         abort(401, description="Unauthorized: Missing or invalid API token.")
 
     # 2. --- Get Client IP from the request ---
-    # We use the IP from the query parameter as the primary identifier.
-    # This allows for flexibility if the client's perceived IP is different.
     client_ip = request.args.get('ip')
     if not client_ip:
-        # If the 'ip' parameter is missing, fall back to the requester's IP.
         client_ip = get_client_ip()
         
     app.logger.info(f"Configuration request received for IP: {client_ip}")
 
-    # 3. --- Read and Parse the INI Configuration File ---
-    config = configparser.ConfigParser()
-    config.optionxform = str
+    # 3. --- Read power_manager.conf and find client configuration ---
     try:
-        # Use read() which returns an empty list if the file doesn't exist.
-        if not config.read(UPSHUB_CONFIG_FILE):
-            raise FileNotFoundError(f"Client configuration file not found at {UPSHUB_CONFIG_FILE}")
-            
-    except FileNotFoundError as e:
-        app.logger.error(e)
-        # 500 Internal Server Error
-        abort(500, description=str(e))
-    except configparser.Error as e:
-        app.logger.error(f"Error parsing configuration file: {e}")
-        abort(500, description=f"Server configuration error: {e}")
-
-    # 4. --- Find and Return the Client's Configuration ---
-    if client_ip in config:
-        # The section for the client exists. Convert it to a dictionary.
-        # This will contain client-specific settings like SHUTDOWN_DELAY_MINUTES.
-        client_config = dict(config[client_ip])
-        app.logger.info(f"Found base configuration for {client_ip}: {client_config}")
-
-        # 5. --- Dynamically Generate and Add the UPS_NAME ---
+        main_config, wake_hosts = read_power_manager_config()
+        
+        # Look for the client IP in wake hosts sections
+        client_config = None
+        for section, params in wake_hosts.items():
+            if params.get('IP') == client_ip:
+                client_config = params.copy()
+                break
+        
+        if not client_config:
+            app.logger.warning(f"No configuration section found for IP: {client_ip}")
+            abort(404, description=f"No configuration found for IP address {client_ip}")
+        
+        # Extract only the needed parameters for the client
+        response_config = {}
+        
+        # Get shutdown delay (required)
+        shutdown_delay = client_config.get('SHUTDOWN_DELAY_MINUTES')
+        if shutdown_delay:
+            response_config['SHUTDOWN_DELAY_MINUTES'] = shutdown_delay
+        else:
+            # Default to 5 minutes if not specified
+            response_config['SHUTDOWN_DELAY_MINUTES'] = '5'
+            app.logger.warning(f"No SHUTDOWN_DELAY_MINUTES found for {client_ip}, using default: 5")
+        
+        # Generate UPS_NAME
         ups_name = get_ups_name()
         server_ip = get_server_ip()
-        client_config['UPS_NAME'] = f"{ups_name}@{server_ip}"
-
-        app.logger.info(f"Generated full configuration for {client_ip}: {client_config}")
-        return jsonify(client_config)
-    else:
-        # The client's IP was not found in the config file.
-        app.logger.warning(f"No configuration section found for IP: {client_ip}")
-        # 404 Not Found
-        abort(404, description=f"No configuration found for IP address {client_ip}")
+        response_config['UPS_NAME'] = f"{ups_name}@{server_ip}"
+        
+        app.logger.info(f"Generated configuration for {client_ip}: {response_config}")
+        return jsonify(response_config)
+        
+    except Exception as e:
+        app.logger.error(f"Error reading configuration: {e}")
+        abort(500, description=f"Server configuration error: {e}")
 
 if __name__ == '__main__':
     # For production, use a proper WSGI server like Gunicorn or uWSGI.
