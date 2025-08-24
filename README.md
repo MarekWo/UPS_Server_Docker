@@ -17,6 +17,7 @@ This project is the perfect companion to the **[UPS_monitor](https://github.com/
 ### How It Works
 
 The logic is simple but effective:
+![Dashboard](/images/workflow.png)
 
 1.  **Monitor:** A cron job inside the container runs a script (`power_manager.sh`) every minute to ping a list of user-defined sentinel hosts.
 2.  **Decide:**

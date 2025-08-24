@@ -15,3 +15,5 @@ logs/
 .env
 
 *.pdf
+*.bkp
+*.drawio
