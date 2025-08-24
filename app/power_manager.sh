@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Power Manager for Dummy NUT Server (v1.0.3)
+# Power Manager for Dummy NUT Server (v1.0.4)
 #
 # Author: Marek Wojtaszek (Enhancements by Gemini)
 # GitHub: https://github.com/MarekWo/
@@ -15,6 +15,8 @@
 # and ensure consistent logging, especially in containerized environments.
 # v1.0.3 Change: Enhanced configuration format for WAKE_HOSTS with sections
 # and added support for per-host broadcast IPs and descriptive names.
+# v1.0.4 Change: Fixed config parsing to handle values with spaces correctly,
+# both with and without quotes.
 #
 ################################################################################
 
@@ -43,6 +45,35 @@ log() {
     logger -p "user.$level" -t "PowerManager" -- "$msg"
 }
 
+# === FUNCTION TO PARSE MAIN CONFIG VARIABLES ===
+parse_main_config() {
+    local config_file="$1"
+    
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip comments and empty lines
+        [[ "$line" =~ ^[[:space:]]*# || -z "$line" ]] && continue
+        
+        # Skip section headers
+        [[ "$line" =~ ^\[[[:space:]]*WAKE_HOST_[0-9]+[[:space:]]*\]$ ]] && continue
+        
+        # Parse key=value pairs for main config only
+        if [[ "$line" =~ ^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+            
+            # Remove surrounding quotes if present
+            if [[ "$value" =~ ^\"(.*)\"$ ]]; then
+                value="${BASH_REMATCH[1]}"
+            elif [[ "$value" =~ ^\'(.*)\'$ ]]; then
+                value="${BASH_REMATCH[1]}"
+            fi
+            
+            # Export the variable
+            declare -g "$key=$value"
+        fi
+    done < "$config_file"
+}
+
 # === FUNCTION TO PARSE WAKE HOSTS FROM CONFIG ===
 parse_wake_hosts() {
     local config_file="$1"
@@ -63,9 +94,16 @@ parse_wake_hosts() {
         # Only process lines within WAKE_HOST sections
         if [[ "$current_section" =~ ^WAKE_HOST_[0-9]+$ ]]; then
             # Parse key=value pairs
-            if [[ "$line" =~ ^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+            if [[ "$line" =~ ^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
                 key="${BASH_REMATCH[1]}"
                 value="${BASH_REMATCH[2]}"
+                
+                # Remove surrounding quotes if present
+                if [[ "$value" =~ ^\"(.*)\"$ ]]; then
+                    value="${BASH_REMATCH[1]}"
+                elif [[ "$value" =~ ^\'(.*)\'$ ]]; then
+                    value="${BASH_REMATCH[1]}"
+                fi
                 
                 # Store values with section prefix
                 declare -g "${current_section}_${key}=$value"
@@ -90,10 +128,13 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 # Parse the main configuration variables (non-section)
-source "$CONFIG_FILE"
+parse_main_config "$CONFIG_FILE"
 
 # Parse wake host sections
 parse_wake_hosts "$CONFIG_FILE"
+
+# Debug: Log the parsed SENTINEL_HOSTS value
+log "info" "Parsed SENTINEL_HOSTS: '$SENTINEL_HOSTS'"
 
 # === CHECK SENTINEL HOSTS AVAILABILITY ===
 log "info" "Pinging sentinel hosts: $SENTINEL_HOSTS"
