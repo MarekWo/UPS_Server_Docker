@@ -1,44 +1,44 @@
 {% extends "base.html" %}
 
-{% block title %}Konfiguracja - UPS Power Management Server{% endblock %}
+{% block title %}Configuration - UPS Power Management Server{% endblock %}
 
 {% block content %}
 <div class="row">
     <div class="col-12 mb-4">
-        <h2><i class="fas fa-cog me-2"></i>Konfiguracja Systemu</h2>
+        <h2><i class="fas fa-cog me-2"></i>System Configuration</h2>
     </div>
 </div>
 
 <!-- Main Configuration -->
 <div class="config-section">
-    <h4 class="section-title"><i class="fas fa-sliders-h me-2"></i>Konfiguracja Główna</h4>
+    <h4 class="section-title"><i class="fas fa-sliders-h me-2"></i>Main Configuration</h4>
     <form method="POST" action="{{ url_for('save_main_config') }}">
         <div class="row">
             <div class="col-md-6 mb-3">
-                <label for="sentinel_hosts" class="form-label">Hosty Sentinel (adresy IP oddzielone spacją)</label>
+                <label for="sentinel_hosts" class="form-label">Sentinel Hosts (IP addresses separated by spaces)</label>
                 <textarea class="form-control" id="sentinel_hosts" name="sentinel_hosts" rows="3" placeholder="192.168.1.11 192.168.1.12 192.168.1.13">{{ pm_config.get('SENTINEL_HOSTS', '') }}</textarea>
-                <div class="form-text">Lista adresów IP urządzeń podłączonych do sieci elektrycznej (nie do UPS), które służą do monitorowania dostępności zasilania.</div>
+                <div class="form-text">List of IP addresses of devices connected to grid power (not UPS) used to monitor power availability.</div>
             </div>
             <div class="col-md-6 mb-3">
-                <label for="wol_delay_minutes" class="form-label">Opóźnienie Wake-on-LAN (minuty)</label>
+                <label for="wol_delay_minutes" class="form-label">Wake-on-LAN Delay (minutes)</label>
                 <input type="number" class="form-control" id="wol_delay_minutes" name="wol_delay_minutes" min="1" max="60" value="{{ pm_config.get('WOL_DELAY_MINUTES', '5') }}">
-                <div class="form-text">Czas oczekiwania po przywróceniu zasilania przed wysłaniem sygnałów Wake-on-LAN.</div>
+                <div class="form-text">Time to wait after power restoration before sending Wake-on-LAN signals.</div>
             </div>
         </div>
         <div class="row">
             <div class="col-md-6 mb-3">
-                <label for="default_broadcast_ip" class="form-label">Domyślny adres broadcast</label>
+                <label for="default_broadcast_ip" class="form-label">Default Broadcast Address</label>
                 <input type="text" class="form-control" id="default_broadcast_ip" name="default_broadcast_ip" placeholder="192.168.1.255" value="{{ pm_config.get('DEFAULT_BROADCAST_IP', '192.168.1.255') }}">
-                <div class="form-text">Adres broadcast używany do wysyłania pakietów Wake-on-LAN.</div>
+                <div class="form-text">Broadcast address used for sending Wake-on-LAN packets.</div>
             </div>
             <div class="col-md-6 mb-3">
-                <label for="ups_state_file" class="form-label">Plik stanu UPS</label>
+                <label for="ups_state_file" class="form-label">UPS State File</label>
                 <input type="text" class="form-control" id="ups_state_file" name="ups_state_file" value="{{ pm_config.get('UPS_STATE_FILE', '/var/run/nut/virtual.device') }}" readonly>
-                <div class="form-text">Ścieżka do pliku stanu wirtualnego urządzenia UPS (tylko do odczytu).</div>
+                <div class="form-text">Path to the virtual UPS device state file (read-only).</div>
             </div>
         </div>
         <button type="submit" class="btn btn-primary">
-            <i class="fas fa-save me-1"></i>Zapisz Konfigurację Główną
+            <i class="fas fa-save me-1"></i>Save Main Configuration
         </button>
     </form>
 </div>
@@ -46,9 +46,9 @@
 <!-- Wake Hosts Configuration -->
 <div class="config-section">
     <h4 class="section-title">
-        <i class="fas fa-server me-2"></i>Zarządzane Hosty
+        <i class="fas fa-server me-2"></i>Managed Hosts
         <button type="button" class="btn btn-success btn-sm float-end" data-bs-toggle="modal" data-bs-target="#addWakeHostModal">
-            <i class="fas fa-plus"></i> Dodaj Host
+            <i class="fas fa-plus"></i> Add Host
         </button>
     </h4>
     
@@ -57,12 +57,12 @@
             <table class="table table-hover">
                 <thead>
                     <tr>
-                        <th>Nazwa</th>
-                        <th>Adres IP</th>
-                        <th>Adres MAC</th>
+                        <th>Name</th>
+                        <th>IP Address</th>
+                        <th>MAC Address</th>
                         <th>Broadcast IP</th>
-                        <th>Opóźnienie UPS</th>
-                        <th>Akcje</th>
+                        <th>UPS Delay</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -76,15 +76,15 @@
                             {% if host.get('SHUTDOWN_DELAY_MINUTES') %}
                                 <span class="badge bg-success">{{ host.get('SHUTDOWN_DELAY_MINUTES') }} min</span>
                             {% else %}
-                                <span class="badge bg-secondary">Brak</span>
+                                <span class="badge bg-secondary">None</span>
                             {% endif %}
                         </td>
                         <td>
-                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editWakeHost('{{ section }}', '{{ host.get('NAME', '') }}', '{{ host.get('IP', '') }}', '{{ host.get('MAC', '') }}', '{{ host.get('BROADCAST_IP', '') }}', '{{ host.get('SHUTDOWN_DELAY_MINUTES', '') }}')" title="Edytuj">
+                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editWakeHost('{{ section }}', '{{ host.get('NAME', '') }}', '{{ host.get('IP', '') }}', '{{ host.get('MAC', '') }}', '{{ host.get('BROADCAST_IP', '') }}', '{{ host.get('SHUTDOWN_DELAY_MINUTES', '') }}')" title="Edit">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <form method="POST" action="{{ url_for('delete_wake_host', section=section) }}" style="display: inline;" onsubmit="return confirm('Czy na pewno chcesz usunąć host {{ host.get('NAME', section) }}?')">
-                                <button type="submit" class="btn btn-danger btn-sm" title="Usuń">
+                            <form method="POST" action="{{ url_for('delete_wake_host', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete host {{ host.get('NAME', section) }}?')">
+                                <button type="submit" class="btn btn-danger btn-sm" title="Delete">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </form>
@@ -97,10 +97,10 @@
     {% else %}
         <div class="text-center text-muted py-4">
             <i class="fas fa-server fa-3x mb-3"></i>
-            <h5>Brak skonfigurowanych hostów</h5>
-            <p>Dodaj hosty, które mają być automatycznie wybudzane po przywróceniu zasilania.</p>
+            <h5>No hosts configured</h5>
+            <p>Add hosts to be automatically awakened after power restoration.</p>
             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addWakeHostModal">
-                <i class="fas fa-plus me-1"></i>Dodaj Pierwszy Host
+                <i class="fas fa-plus me-1"></i>Add First Host
             </button>
         </div>
     {% endif %}
@@ -111,40 +111,40 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Dodaj Nowy Host</h5>
+                <h5 class="modal-title">Add New Host</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" action="{{ url_for('add_wake_host') }}">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="add_name" class="form-label">Nazwa Hosta</label>
+                        <label for="add_name" class="form-label">Host Name</label>
                         <input type="text" class="form-control" id="add_name" name="name" required>
-                        <div class="form-text">Opisowa nazwa hosta (np. "Serwer Plików", "NAS Synology").</div>
+                        <div class="form-text">Descriptive name for the host (e.g., "File Server", "Synology NAS").</div>
                     </div>
                     <div class="mb-3">
-                        <label for="add_ip" class="form-label">Adres IP</label>
+                        <label for="add_ip" class="form-label">IP Address</label>
                         <input type="text" class="form-control" id="add_ip" name="ip" placeholder="192.168.1.100" required>
-                        <div class="form-text">Adres IP hosta w sieci lokalnej.</div>
+                        <div class="form-text">IP address of the host on the local network.</div>
                     </div>
                     <div class="mb-3">
-                        <label for="add_mac" class="form-label">Adres MAC</label>
+                        <label for="add_mac" class="form-label">MAC Address</label>
                         <input type="text" class="form-control" id="add_mac" name="mac" placeholder="00:11:32:aa:bb:cc" required>
-                        <div class="form-text">Adres MAC karty sieciowej hosta (format: XX:XX:XX:XX:XX:XX).</div>
+                        <div class="form-text">MAC address of the host's network card (format: XX:XX:XX:XX:XX:XX).</div>
                     </div>
                     <div class="mb-3">
-                        <label for="add_broadcast_ip" class="form-label">Broadcast IP (opcjonalne)</label>
+                        <label for="add_broadcast_ip" class="form-label">Broadcast IP (optional)</label>
                         <input type="text" class="form-control" id="add_broadcast_ip" name="broadcast_ip" placeholder="192.168.1.255">
-                        <div class="form-text">Adres broadcast dla tego hosta (pozostaw puste, aby użyć domyślnego).</div>
+                        <div class="form-text">Broadcast address for this host (leave empty to use default).</div>
                     </div>
                     <div class="mb-3">
-                        <label for="add_shutdown_delay" class="form-label">Opóźnienie wyłączenia UPS (minuty, opcjonalne)</label>
+                        <label for="add_shutdown_delay" class="form-label">UPS Shutdown Delay (minutes, optional)</label>
                         <input type="number" class="form-control" id="add_shutdown_delay" name="shutdown_delay" min="1" max="60" placeholder="5">
-                        <div class="form-text">Jeśli ustawione, host będzie klientem UPS z określonym opóźnieniem wyłączenia.</div>
+                        <div class="form-text">If set, host will be a UPS client with specified shutdown delay.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
-                    <button type="submit" class="btn btn-success">Dodaj Host</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">Add Host</button>
                 </div>
             </form>
         </div>
@@ -156,36 +156,36 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Edytuj Host</h5>
+                <h5 class="modal-title">Edit Host</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" id="editWakeHostForm">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="edit_name" class="form-label">Nazwa Hosta</label>
+                        <label for="edit_name" class="form-label">Host Name</label>
                         <input type="text" class="form-control" id="edit_name" name="name" required>
                     </div>
                     <div class="mb-3">
-                        <label for="edit_ip" class="form-label">Adres IP</label>
+                        <label for="edit_ip" class="form-label">IP Address</label>
                         <input type="text" class="form-control" id="edit_ip" name="ip" required>
                     </div>
                     <div class="mb-3">
-                        <label for="edit_mac" class="form-label">Adres MAC</label>
+                        <label for="edit_mac" class="form-label">MAC Address</label>
                         <input type="text" class="form-control" id="edit_mac" name="mac" required>
                     </div>
                     <div class="mb-3">
-                        <label for="edit_broadcast_ip" class="form-label">Broadcast IP (opcjonalne)</label>
+                        <label for="edit_broadcast_ip" class="form-label">Broadcast IP (optional)</label>
                         <input type="text" class="form-control" id="edit_broadcast_ip" name="broadcast_ip">
                     </div>
                     <div class="mb-3">
-                        <label for="edit_shutdown_delay" class="form-label">Opóźnienie wyłączenia UPS (minuty, opcjonalne)</label>
+                        <label for="edit_shutdown_delay" class="form-label">UPS Shutdown Delay (minutes, optional)</label>
                         <input type="number" class="form-control" id="edit_shutdown_delay" name="shutdown_delay" min="1" max="60">
-                        <div class="form-text">Jeśli ustawione, host będzie klientem UPS z określonym opóźnieniem wyłączenia.</div>
+                        <div class="form-text">If set, host will be a UPS client with specified shutdown delay.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
-                    <button type="submit" class="btn btn-warning">Zapisz Zmiany</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">Save Changes</button>
                 </div>
             </form>
         </div>
@@ -251,7 +251,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (input.value && !isValidIP(input.value)) {
                     e.preventDefault();
                     input.classList.add('is-invalid');
-                    showError('Nieprawidłowy adres IP: ' + input.value);
+                    showError('Invalid IP address: ' + input.value);
                     return false;
                 } else {
                     input.classList.remove('is-invalid');
@@ -263,7 +263,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (input.value && !isValidMAC(input.value)) {
                     e.preventDefault();
                     input.classList.add('is-invalid');
-                    showError('Nieprawidłowy adres MAC: ' + input.value);
+                    showError('Invalid MAC address: ' + input.value);
                     return false;
                 } else {
                     input.classList.remove('is-invalid');

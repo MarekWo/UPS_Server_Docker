@@ -8,7 +8,7 @@
     <div class="col-12 mb-4">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Przegląd Systemu</h5>
+                <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>System Overview</h5>
             </div>
             <div class="card-body">
                 <div class="row g-4">
@@ -18,7 +18,7 @@
                                 <i class="fas fa-server"></i>
                             </div>
                             <div class="h4 mb-0">{{ wake_hosts|length }}</div>
-                            <small class="text-muted">Zarządzane Hosty</small>
+                            <small class="text-muted">Managed Hosts</small>
                         </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
@@ -27,7 +27,7 @@
                                 <i class="fas fa-network-wired"></i>
                             </div>
                             <div class="h4 mb-0">{{ sentinel_hosts|length }}</div>
-                            <small class="text-muted">Hosty Sentinel</small>
+                            <small class="text-muted">Sentinel Hosts</small>
                         </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
@@ -36,7 +36,7 @@
                                 <i class="fas fa-users"></i>
                             </div>
                             <div class="h4 mb-0">{{ ups_clients|length }}</div>
-                            <small class="text-muted">Klienci UPS</small>
+                            <small class="text-muted">UPS Clients</small>
                         </div>
                     </div>
                     <div class="col-md-3 col-sm-6">
@@ -45,7 +45,7 @@
                                 <i class="fas fa-clock"></i>
                             </div>
                             <div class="h4 mb-0">{{ pm_config.get('WOL_DELAY_MINUTES', '5') }}min</div>
-                            <small class="text-muted">Opóźnienie WoL</small>
+                            <small class="text-muted">WoL Delay</small>
                         </div>
                     </div>
                 </div>
@@ -59,7 +59,7 @@
     <div class="col-lg-4 mb-4">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-eye me-2"></i>Status Hostów Sentinel</h5>
+                <h5 class="mb-0"><i class="fas fa-eye me-2"></i>Sentinel Hosts Status</h5>
                 <button class="btn btn-sm btn-outline-primary" onclick="refreshStatus()">
                     <i class="fas fa-sync-alt"></i>
                 </button>
@@ -70,7 +70,7 @@
                         <table class="table table-sm">
                             <thead>
                                 <tr>
-                                    <th>Adres IP</th>
+                                    <th>IP Address</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
@@ -93,8 +93,8 @@
                 {% else %}
                     <div class="text-center text-muted py-3">
                         <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
-                        <p>Brak skonfigurowanych hostów sentinel</p>
-                        <a href="{{ url_for('config') }}" class="btn btn-primary btn-sm">Dodaj Hosty Sentinel</a>
+                        <p>No sentinel hosts configured</p>
+                        <a href="{{ url_for('config') }}" class="btn btn-primary btn-sm">Add Sentinel Hosts</a>
                     </div>
                 {% endif %}
             </div>
@@ -105,7 +105,7 @@
     <div class="col-lg-8 mb-4">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0"><i class="fas fa-plug me-2"></i>Status Klientów UPS</h5>
+                <h5 class="mb-0"><i class="fas fa-plug me-2"></i>UPS Clients Status</h5>
             </div>
             <div class="card-body">
                 {% if ups_clients %}
@@ -113,11 +113,11 @@
                         <table class="table table-sm">
                             <thead>
                                 <tr>
-                                    <th>Nazwa</th>
+                                    <th>Name</th>
                                     <th>IP</th>
                                     <th>Status</th>
-                                    <th>Opóźnienie</th>
-                                    <th>Akcje</th>
+                                    <th>Delay</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -138,7 +138,7 @@
                                         </span>
                                     </td>
                                     <td>
-                                        <button class="btn btn-warning btn-sm" onclick="sendWOL('{{ section }}', '{{ client.name }}')" title="Wyślij Wake-on-LAN">
+                                        <button class="btn btn-warning btn-sm" onclick="sendWOL('{{ section }}', '{{ client.name }}')" title="Send Wake-on-LAN">
                                             <i class="fas fa-power-off"></i>
                                         </button>
                                     </td>
@@ -150,8 +150,8 @@
                 {% else %}
                     <div class="text-center text-muted py-3">
                         <i class="fas fa-plug fa-2x mb-2"></i>
-                        <p>Brak skonfigurowanych klientów UPS</p>
-                        <a href="{{ url_for('config') }}" class="btn btn-primary btn-sm">Dodaj Klientów UPS</a>
+                        <p>No UPS clients configured</p>
+                        <a href="{{ url_for('config') }}" class="btn btn-primary btn-sm">Add UPS Clients</a>
                     </div>
                 {% endif %}
             </div>
@@ -172,17 +172,17 @@
     <div class="col-12">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0"><i class="fas fa-server me-2"></i>Pozostałe Zarządzane Hosty</h5>
+                <h5 class="mb-0"><i class="fas fa-server me-2"></i>Other Managed Hosts</h5>
             </div>
             <div class="card-body">
                 <div class="table-responsive mobile-responsive">
                     <table class="table table-sm">
                         <thead>
                             <tr>
-                                <th>Nazwa</th>
+                                <th>Name</th>
                                 <th>IP</th>
                                 <th>Status</th>
-                                <th>Akcje</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -198,7 +198,7 @@
                                     </span>
                                 </td>
                                 <td>
-                                    <button class="btn btn-warning btn-sm" onclick="sendWOL('{{ section }}', '{{ host.get('NAME', section) }}')" title="Wyślij Wake-on-LAN">
+                                    <button class="btn btn-warning btn-sm" onclick="sendWOL('{{ section }}', '{{ host.get('NAME', section) }}')" title="Send Wake-on-LAN">
                                         <i class="fas fa-power-off"></i>
                                     </button>
                                 </td>
@@ -217,7 +217,7 @@
 {% block extra_scripts %}
 <script>
 function sendWOL(section, hostName) {
-    if (!confirm('Czy na pewno chcesz wysłać sygnał Wake-on-LAN do hosta "' + hostName + '"?')) {
+    if (!confirm('Are you sure you want to send Wake-on-LAN signal to "' + hostName + '"?')) {
         return;
     }
     
@@ -274,7 +274,7 @@ function sendWOL(section, hostName) {
             alert.className = 'alert alert-danger alert-dismissible fade show';
             alert.innerHTML = `
                 <i class="fas fa-exclamation-triangle me-2"></i>
-                Błąd połączenia z serwerem
+                Connection error with server
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
             document.querySelector('.container').insertBefore(alert, document.querySelector('.container').firstChild);
