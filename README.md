@@ -214,6 +214,7 @@ In this case, the NUT server and API will function correctly for monitoring and 
 ## Web Interface
 
 The UPS Server includes a modern, responsive web interface for easy configuration and monitoring.
+![Dashboard](/images/web-ui-dashboard.png)
 
 ### Accessing the Web GUI
 

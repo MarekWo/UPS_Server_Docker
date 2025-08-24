@@ -14,12 +14,16 @@ The Web GUI for UPS Server provides easy management of system configuration thro
 - **Automatic Refresh**: Host status is automatically refreshed every 30 seconds
 - **One-Click WoL**: Buttons to instantly send Wake-on-LAN signals to selected hosts
 
+![Dashboard](/images/web-ui-dashboard.png)
+
 ### ⚙️ Configuration
 - **Main Configuration**: Edit system parameters (sentinel hosts, WoL delay, broadcast address)
 - **Managed Host Management**: Add, edit, and remove hosts with Wake-on-LAN and UPS client functionality
 - **Data Validation**: Automatic validation of IP addresses and MAC addresses with error feedback
 - **Auto-formatting**: Intelligent MAC address formatting during input
 - **Unified Configuration**: Single interface for all host parameters including optional UPS client settings
+
+![Configuration](/images/web-ui-config.png)
 
 ## Installation and Configuration
 
