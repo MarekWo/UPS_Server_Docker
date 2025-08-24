@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - UPS Power Management Server{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- System Overview -->
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Przegląd Systemu</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-3 col-sm-6">
+                        <div class="text-center">
+                            <div class="h3 text-primary mb-1">
+                                <i class="fas fa-server"></i>
+                            </div>
+                            <div class="h4 mb-0">{{ wake_hosts|length }}</div>
+                            <small class="text-muted">Zarządzane Hosty</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="text-center">
+                            <div class="h3 text-info mb-1">
+                                <i class="fas fa-network-wired"></i>
+                            </div>
+                            <div class="h4 mb-0">{{ sentinel_hosts|length }}</div>
+                            <small class="text-muted">Hosty Sentinel</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="text-center">
+                            <div class="h3 text-success mb-1">
+                                <i class="fas fa-users"></i>
+                            </div>
+                            <div class="h4 mb-0">{{ upshub_config.sections()|length }}</div>
+                            <small class="text-muted">Klienci UPS</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <div class="text-center">
+                            <div class="h3 text-warning mb-1">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="h4 mb-0">{{ pm_config.get('WOL_DELAY_MINUTES', '5') }}min</div>
+                            <small class="text-muted">Opóźnienie WoL</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Sentinel Hosts Status -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-eye me-2"></i>Status Hostów Sentinel</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshStatus()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                {% if sentinel_hosts %}
+                    <div class="table-responsive mobile-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Adres IP</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for host in sentinel_hosts %}
+                                    {% if host %}
+                                    <tr>
+                                        <td><code>{{ host }}</code></td>
+                                        <td>
+                                            <span id="sentinel-{{ host.replace('.', '-') }}" class="status-indicator {{ 'online' if sentinel_status.get(host) else 'offline' }}"></span>
+                                            <span id="sentinel-{{ host.replace('.', '-') }}-text" class="{{ 'status-online' if sentinel_status.get(host) else 'status-offline' }}">
+                                                <i class="fas fa-{{ 'check-circle' if sentinel_status.get(host) else 'times-circle' }} me-1"></i>
+                                                {{ 'Online' if sentinel_status.get(host) else 'Offline' }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted py-3">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                        <p>Brak skonfigurowanych hostów sentinel</p>
+                        <a href="{{ url_for('config') }}" class="btn btn-primary btn-sm">Dodaj Hosty Sentinel</a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Wake Hosts Status -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-server me-2"></i>Status Zarządzanych Hostów</h5>
+            </div>
+            <div class="card-body">
+                {% if wake_hosts %}
+                    <div class="table-responsive mobile-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Nazwa</th>
+                                    <th>IP</th>
+                                    <th>Status</th>
+                                    <th>Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for section, host in wake_hosts.items() %}
+                                <tr>
+                                    <td><strong>{{ host.get('NAME', section) }}</strong></td>
+                                    <td><code>{{ host.get('IP', '') }}</code></td>
+                                    <td>
+                                        <span id="wake-{{ section }}" class="status-indicator {{ 'online' if wake_host_status.get(section) else 'offline' }}"></span>
+                                        <span id="wake-{{ section }}-text" class="{{ 'status-online' if wake_host_status.get(section) else 'status-offline' }}">
+                                            <i class="fas fa-{{ 'check-circle' if wake_host_status.get(section) else 'times-circle' }} me-1"></i>
+                                            {{ 'Online' if wake_host_status.get(section) else 'Offline' }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-warning btn-sm" onclick="sendWOL('{{ section }}', '{{ host.get('NAME', section) }}')" title="Wyślij Wake-on-LAN">
+                                            <i class="fas fa-power-off"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted py-3">
+                        <i class="fas fa-server fa-2x mb-2"></i>
+                        <p>Brak skonfigurowanych hostów do zarządzania</p>
+                        <a href="{{ url_for('config') }}" class="btn btn-primary btn-sm">Dodaj Hosty</a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- UPS Hub Clients -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-plug me-2"></i>Klienci UPS Hub</h5>
+            </div>
+            <div class="card-body">
+                {% if upshub_config.sections() %}
+                    <div class="table-responsive mobile-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Adres IP Klienta</th>
+                                    <th>Opóźnienie Wyłączenia</th>
+                                    <th>UPS Name</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for client_ip in upshub_config.sections() %}
+                                <tr>
+                                    <td><code>{{ client_ip }}</code></td>
+                                    <td>
+                                        <span class="badge bg-info">
+                                            {{ upshub_config.get(client_ip, 'SHUTDOWN_DELAY_MINUTES', fallback='5') }} minut
+                                        </span>
+                                    </td>
+                                    <td><code>ups@{{ pm_config.get('UPS_SERVER_HOST_IP', 'localhost') }}</code></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted py-3">
+                        <i class="fas fa-plug fa-2x mb-2"></i>
+                        <p>Brak skonfigurowanych klientów UPS Hub</p>
+                        <a href="{{ url_for('config') }}" class="btn btn-primary btn-sm">Dodaj Klientów</a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function sendWOL(section, hostName) {
+    if (!confirm('Czy na pewno chcesz wysłać sygnał Wake-on-LAN do hosta "' + hostName + '"?')) {
+        return;
+    }
+    
+    const button = event.target.closest('button');
+    const originalContent = button.innerHTML;
+    
+    // Show loading state
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    
+    fetch('/wol/' + section)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show success message
+                const alert = document.createElement('div');
+                alert.className = 'alert alert-success alert-dismissible fade show';
+                alert.innerHTML = `
+                    <i class="fas fa-check-circle me-2"></i>
+                    ${data.message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.querySelector('.container').insertBefore(alert, document.querySelector('.container').firstChild);
+                
+                // Auto-hide alert
+                setTimeout(() => {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                }, 3000);
+                
+                // Refresh status after a short delay
+                setTimeout(refreshStatus, 2000);
+            } else {
+                // Show error message
+                const alert = document.createElement('div');
+                alert.className = 'alert alert-danger alert-dismissible fade show';
+                alert.innerHTML = `
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    ${data.message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.querySelector('.container').insertBefore(alert, document.querySelector('.container').firstChild);
+                
+                // Auto-hide alert
+                setTimeout(() => {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                }, 5000);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-danger alert-dismissible fade show';
+            alert.innerHTML = `
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Błąd połączenia z serwerem
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.container').insertBefore(alert, document.querySelector('.container').firstChild);
+        })
+        .finally(() => {
+            // Restore button state
+            button.disabled = false;
+            button.innerHTML = originalContent;
+        });
+}
+</script>
+{% endblock %}

@@ -1,4 +1,4 @@
-# Docker Compose file for the UPS Server application
+# Docker Compose file for the UPS Server application with Web GUI
 # Version: '3.8' specifies the file format version.
 # version: '3.8'
 
@@ -31,11 +31,14 @@ services:
       # Format is "HOST:CONTAINER"
 
       # - Expose the NUT server on port 3493.
-      # This nees to be disabled if you used the network_mode: host option.
+      # This needs to be disabled if you used the network_mode: host option.
       # - "3493:3493"
       # - Expose the UPS Hub API on port 5000.
-      # This nees to be disabled if you used the network_mode: host option.
+      # This needs to be disabled if you used the network_mode: host option.
       # - "5000:5000"
+      # - Expose the Web GUI on port 80.
+      # This needs to be disabled if you used the network_mode: host option.
+      # - "80:80"
       
     volumes:
       # Mount local directories into the container for persistent data

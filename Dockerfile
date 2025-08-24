@@ -33,6 +33,9 @@ WORKDIR /app
 # Copy the application scripts into the container
 COPY app/ .
 
+# Create templates directory for Web GUI
+RUN mkdir -p /app/templates
+
 # Make the power manager script executable
 RUN chmod +x /app/power_manager.sh
 
@@ -54,6 +57,7 @@ RUN mkdir -p /var/run/nut && \
 # --- Expose Ports ---
 EXPOSE 3493
 EXPOSE 5000
+EXPOSE 80
 
 # Copy the entrypoint script and make it executable
 COPY entrypoint.sh /entrypoint.sh

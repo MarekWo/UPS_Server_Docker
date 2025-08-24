@@ -24,6 +24,10 @@ rsyslogd
 echo "Starting cron daemon..."
 cron
 
-# --- 4. Start the UPS Hub API ---
-echo "Starting Gunicorn for UPS Hub API..."
+# --- 4. Start the Web GUI ---
+echo "Starting Gunicorn for Web GUI on port 80..."
+gunicorn --workers 2 --bind 0.0.0.0:80 --chdir /app web_gui:app --daemon
+
+# --- 5. Start the UPS Hub API ---
+echo "Starting Gunicorn for UPS Hub API on port 5000..."
 exec gunicorn --workers 3 --bind 0.0.0.0:5000 --chdir /app api:app

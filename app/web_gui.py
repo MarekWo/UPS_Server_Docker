@@ -1,0 +1,508 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+UPS Server Web GUI
+Author: Claude
+Description: A web interface for managing UPS Server configuration
+"""
+
+import os
+import sys
+import configparser
+import subprocess
+import ipaddress
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from werkzeug.exceptions import BadRequest
+
+# Add the current directory to Python path to import api module
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from api import API_TOKEN, get_ups_name, get_server_ip
+
+app = Flask(__name__)
+app.secret_key = 'ups_server_gui_secret_key_change_in_production'
+
+# --- Configuration ---
+POWER_MANAGER_CONFIG = "/etc/nut/power_manager.conf"
+UPSHUB_CONFIG = "/etc/nut/upshub.conf"
+PING_CMD = "/bin/ping"
+WAKEONLAN_CMD = "/usr/bin/wakeonlan"
+
+# --- Helper Functions ---
+
+def read_power_manager_config():
+    """Read and parse power_manager.conf file"""
+    config = {}
+    wake_hosts = {}
+    
+    if not os.path.exists(POWER_MANAGER_CONFIG):
+        return config, wake_hosts
+    
+    current_section = None
+    with open(POWER_MANAGER_CONFIG, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Check for section headers [WAKE_HOST_X]
+            if line.startswith('[WAKE_HOST_') and line.endswith(']'):
+                current_section = line[1:-1]  # Remove brackets
+                wake_hosts[current_section] = {}
+                continue
+            
+            # Parse key=value pairs
+            if '=' in line:
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                # Remove quotes from values if present
+                if value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                elif value.startswith("'") and value.endswith("'"):
+                    value = value[1:-1]
+                elif value.startswith('"'):
+                    value = value[1:]
+                elif value.endswith('"'):
+                    value = value[:-1]
+                elif value.startswith("'"):
+                    value = value[1:]
+                elif value.endswith("'"):
+                    value = value[:-1]
+                
+                if current_section:
+                    # This is a wake host parameter
+                    wake_hosts[current_section][key] = value
+                else:
+                    # This is a main config parameter
+                    config[key] = value
+    
+    return config, wake_hosts
+
+def write_power_manager_config(config, wake_hosts):
+    """Write power_manager.conf file"""
+    with open(POWER_MANAGER_CONFIG, 'w') as f:
+        f.write("# === CONFIGURATION FILE FOR POWER_MANAGER.SH ===\n\n")
+        
+        # Write main configuration
+        for key, value in config.items():
+            f.write(f"{key}={value}\n")
+        
+        f.write("\n# === WAKE-ON-LAN HOST DEFINITIONS ===\n")
+        
+        # Write wake hosts
+        for section, params in wake_hosts.items():
+            f.write(f"\n[{section}]\n")
+            for key, value in params.items():
+                f.write(f"{key}={value}\n")
+
+def read_upshub_config():
+    """Read upshub.conf file"""
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    if os.path.exists(UPSHUB_CONFIG):
+        config.read(UPSHUB_CONFIG)
+    return config
+
+def write_upshub_config(config):
+    """Write upshub.conf file"""
+    with open(UPSHUB_CONFIG, 'w') as f:
+        config.write(f)
+
+def ping_host(ip):
+    """Check if host is online"""
+    try:
+        result = subprocess.run(
+            [PING_CMD, "-c", "1", "-W", "1", ip],
+            capture_output=True,
+            timeout=2
+        )
+        return result.returncode == 0
+    except:
+        return False
+
+def send_wol(mac, broadcast_ip):
+    """Send Wake-on-LAN packet"""
+    try:
+        subprocess.run([WAKEONLAN_CMD, "-i", broadcast_ip, mac], 
+                      capture_output=True, check=True)
+        return True
+    except:
+        return False
+
+def validate_ip(ip):
+    """Validate IP address"""
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except:
+        return False
+
+def validate_mac(mac):
+    """Validate MAC address"""
+    import re
+    mac_pattern = re.compile(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')
+    return bool(mac_pattern.match(mac))
+
+# --- Routes ---
+
+@app.route('/')
+def index():
+    """Main dashboard"""
+    try:
+        # Read configurations
+        pm_config, wake_hosts = read_power_manager_config()
+        upshub_config = read_upshub_config()
+        
+        # Get status information
+        sentinel_hosts_raw = pm_config.get('SENTINEL_HOSTS', '').split()
+        sentinel_hosts = []
+        sentinel_status = {}
+        
+        # Clean up sentinel hosts (remove quotes and empty entries)
+        for host in sentinel_hosts_raw:
+            if host:
+                # Remove quotes from host IP
+                clean_host = host.strip().strip('"').strip("'")
+                if clean_host and validate_ip(clean_host):
+                    sentinel_hosts.append(clean_host)
+                    sentinel_status[clean_host] = ping_host(clean_host)
+                elif clean_host:
+                    # Invalid IP but not empty - still add for display but mark as offline
+                    sentinel_hosts.append(clean_host)
+                    sentinel_status[clean_host] = False
+        
+        # Get wake host status
+        wake_host_status = {}
+        for section, params in wake_hosts.items():
+            ip = params.get('IP', '')
+            if ip:
+                wake_host_status[section] = ping_host(ip)
+        
+        return render_template('dashboard.html',
+                             pm_config=pm_config,
+                             wake_hosts=wake_hosts,
+                             upshub_config=upshub_config,
+                             sentinel_hosts=sentinel_hosts,
+                             sentinel_status=sentinel_status,
+                             wake_host_status=wake_host_status)
+    except Exception as e:
+        flash(f'Error loading configuration: {str(e)}', 'error')
+        return render_template('dashboard.html')
+
+@app.route('/config')
+def config():
+    """Configuration page"""
+    pm_config, wake_hosts = read_power_manager_config()
+    upshub_config = read_upshub_config()
+    
+    return render_template('config.html',
+                         pm_config=pm_config,
+                         wake_hosts=wake_hosts,
+                         upshub_config=upshub_config)
+
+@app.route('/save_main_config', methods=['POST'])
+def save_main_config():
+    """Save main power manager configuration"""
+    try:
+        pm_config, wake_hosts = read_power_manager_config()
+        
+        # Update main config
+        pm_config['SENTINEL_HOSTS'] = request.form.get('sentinel_hosts', '')
+        pm_config['WOL_DELAY_MINUTES'] = request.form.get('wol_delay_minutes', '5')
+        pm_config['DEFAULT_BROADCAST_IP'] = request.form.get('default_broadcast_ip', '192.168.1.255')
+        pm_config['UPS_STATE_FILE'] = request.form.get('ups_state_file', '/var/run/nut/virtual.device')
+        
+        # Validate IPs in sentinel hosts
+        sentinel_ips = pm_config['SENTINEL_HOSTS'].split()
+        for ip in sentinel_ips:
+            if ip and not validate_ip(ip):
+                flash(f'Invalid IP address: {ip}', 'error')
+                return redirect(url_for('config'))
+        
+        # Validate broadcast IP
+        if not validate_ip(pm_config['DEFAULT_BROADCAST_IP']):
+            flash('Invalid default broadcast IP address', 'error')
+            return redirect(url_for('config'))
+        
+        write_power_manager_config(pm_config, wake_hosts)
+        flash('Main configuration saved successfully!', 'success')
+        
+    except Exception as e:
+        flash(f'Error saving configuration: {str(e)}', 'error')
+    
+    return redirect(url_for('config'))
+
+@app.route('/add_wake_host', methods=['POST'])
+def add_wake_host():
+    """Add new wake host"""
+    try:
+        pm_config, wake_hosts = read_power_manager_config()
+        
+        # Find next available wake host number
+        existing_numbers = []
+        for section in wake_hosts.keys():
+            if section.startswith('WAKE_HOST_'):
+                try:
+                    num = int(section.replace('WAKE_HOST_', ''))
+                    existing_numbers.append(num)
+                except:
+                    pass
+        
+        next_num = 1
+        if existing_numbers:
+            next_num = max(existing_numbers) + 1
+        
+        section_name = f"WAKE_HOST_{next_num}"
+        
+        # Get form data
+        name = request.form.get('name', '').strip()
+        ip = request.form.get('ip', '').strip()
+        mac = request.form.get('mac', '').strip()
+        broadcast_ip = request.form.get('broadcast_ip', '').strip()
+        
+        # Validate data
+        if not name or not ip or not mac:
+            flash('Name, IP, and MAC address are required', 'error')
+            return redirect(url_for('config'))
+        
+        if not validate_ip(ip):
+            flash(f'Invalid IP address: {ip}', 'error')
+            return redirect(url_for('config'))
+        
+        if not validate_mac(mac):
+            flash(f'Invalid MAC address: {mac}', 'error')
+            return redirect(url_for('config'))
+        
+        if broadcast_ip and not validate_ip(broadcast_ip):
+            flash(f'Invalid broadcast IP address: {broadcast_ip}', 'error')
+            return redirect(url_for('config'))
+        
+        # Add new wake host
+        wake_hosts[section_name] = {
+            'NAME': name,
+            'IP': ip,
+            'MAC': mac
+        }
+        
+        if broadcast_ip:
+            wake_hosts[section_name]['BROADCAST_IP'] = broadcast_ip
+        
+        write_power_manager_config(pm_config, wake_hosts)
+        flash(f'Wake host "{name}" added successfully!', 'success')
+        
+    except Exception as e:
+        flash(f'Error adding wake host: {str(e)}', 'error')
+    
+    return redirect(url_for('config'))
+
+@app.route('/edit_wake_host/<section>', methods=['POST'])
+def edit_wake_host(section):
+    """Edit existing wake host"""
+    try:
+        pm_config, wake_hosts = read_power_manager_config()
+        
+        if section not in wake_hosts:
+            flash('Wake host not found', 'error')
+            return redirect(url_for('config'))
+        
+        # Get form data
+        name = request.form.get('name', '').strip()
+        ip = request.form.get('ip', '').strip()
+        mac = request.form.get('mac', '').strip()
+        broadcast_ip = request.form.get('broadcast_ip', '').strip()
+        
+        # Validate data
+        if not name or not ip or not mac:
+            flash('Name, IP, and MAC address are required', 'error')
+            return redirect(url_for('config'))
+        
+        if not validate_ip(ip):
+            flash(f'Invalid IP address: {ip}', 'error')
+            return redirect(url_for('config'))
+        
+        if not validate_mac(mac):
+            flash(f'Invalid MAC address: {mac}', 'error')
+            return redirect(url_for('config'))
+        
+        if broadcast_ip and not validate_ip(broadcast_ip):
+            flash(f'Invalid broadcast IP address: {broadcast_ip}', 'error')
+            return redirect(url_for('config'))
+        
+        # Update wake host
+        wake_hosts[section] = {
+            'NAME': name,
+            'IP': ip,
+            'MAC': mac
+        }
+        
+        if broadcast_ip:
+            wake_hosts[section]['BROADCAST_IP'] = broadcast_ip
+        
+        write_power_manager_config(pm_config, wake_hosts)
+        flash(f'Wake host "{name}" updated successfully!', 'success')
+        
+    except Exception as e:
+        flash(f'Error updating wake host: {str(e)}', 'error')
+    
+    return redirect(url_for('config'))
+
+@app.route('/delete_wake_host/<section>', methods=['POST'])
+def delete_wake_host(section):
+    """Delete wake host"""
+    try:
+        pm_config, wake_hosts = read_power_manager_config()
+        
+        if section in wake_hosts:
+            name = wake_hosts[section].get('NAME', section)
+            del wake_hosts[section]
+            write_power_manager_config(pm_config, wake_hosts)
+            flash(f'Wake host "{name}" deleted successfully!', 'success')
+        else:
+            flash('Wake host not found', 'error')
+        
+    except Exception as e:
+        flash(f'Error deleting wake host: {str(e)}', 'error')
+    
+    return redirect(url_for('config'))
+
+@app.route('/add_upshub_client', methods=['POST'])
+def add_upshub_client():
+    """Add new UPS Hub client"""
+    try:
+        upshub_config = read_upshub_config()
+        
+        ip = request.form.get('ip', '').strip()
+        shutdown_delay = request.form.get('shutdown_delay', '5').strip()
+        
+        if not ip:
+            flash('IP address is required', 'error')
+            return redirect(url_for('config'))
+        
+        if not validate_ip(ip):
+            flash(f'Invalid IP address: {ip}', 'error')
+            return redirect(url_for('config'))
+        
+        try:
+            int(shutdown_delay)
+        except:
+            flash('Shutdown delay must be a number', 'error')
+            return redirect(url_for('config'))
+        
+        if upshub_config.has_section(ip):
+            flash(f'Client {ip} already exists', 'error')
+            return redirect(url_for('config'))
+        
+        upshub_config.add_section(ip)
+        upshub_config.set(ip, 'SHUTDOWN_DELAY_MINUTES', shutdown_delay)
+        
+        write_upshub_config(upshub_config)
+        flash(f'UPS Hub client {ip} added successfully!', 'success')
+        
+    except Exception as e:
+        flash(f'Error adding UPS Hub client: {str(e)}', 'error')
+    
+    return redirect(url_for('config'))
+
+@app.route('/edit_upshub_client/<client_ip>', methods=['POST'])
+def edit_upshub_client(client_ip):
+    """Edit existing UPS Hub client"""
+    try:
+        upshub_config = read_upshub_config()
+        
+        if not upshub_config.has_section(client_ip):
+            flash('Client not found', 'error')
+            return redirect(url_for('config'))
+        
+        shutdown_delay = request.form.get('shutdown_delay', '5').strip()
+        
+        try:
+            int(shutdown_delay)
+        except:
+            flash('Shutdown delay must be a number', 'error')
+            return redirect(url_for('config'))
+        
+        upshub_config.set(client_ip, 'SHUTDOWN_DELAY_MINUTES', shutdown_delay)
+        
+        write_upshub_config(upshub_config)
+        flash(f'UPS Hub client {client_ip} updated successfully!', 'success')
+        
+    except Exception as e:
+        flash(f'Error updating UPS Hub client: {str(e)}', 'error')
+    
+    return redirect(url_for('config'))
+
+@app.route('/delete_upshub_client/<client_ip>', methods=['POST'])
+def delete_upshub_client(client_ip):
+    """Delete UPS Hub client"""
+    try:
+        upshub_config = read_upshub_config()
+        
+        if upshub_config.has_section(client_ip):
+            upshub_config.remove_section(client_ip)
+            write_upshub_config(upshub_config)
+            flash(f'UPS Hub client {client_ip} deleted successfully!', 'success')
+        else:
+            flash('Client not found', 'error')
+        
+    except Exception as e:
+        flash(f'Error deleting UPS Hub client: {str(e)}', 'error')
+    
+    return redirect(url_for('config'))
+
+@app.route('/wol/<section>')
+def wake_host(section):
+    """Send Wake-on-LAN to specific host"""
+    try:
+        pm_config, wake_hosts = read_power_manager_config()
+        
+        if section not in wake_hosts:
+            return jsonify({'success': False, 'message': 'Host not found'})
+        
+        host = wake_hosts[section]
+        mac = host.get('MAC')
+        broadcast_ip = host.get('BROADCAST_IP', pm_config.get('DEFAULT_BROADCAST_IP', '192.168.1.255'))
+        name = host.get('NAME', section)
+        
+        if not mac:
+            return jsonify({'success': False, 'message': 'MAC address not found'})
+        
+        if send_wol(mac, broadcast_ip):
+            return jsonify({'success': True, 'message': f'Wake-on-LAN sent to {name}'})
+        else:
+            return jsonify({'success': False, 'message': f'Failed to send Wake-on-LAN to {name}'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/status')
+def get_status():
+    """Get current status of all hosts"""
+    try:
+        pm_config, wake_hosts = read_power_manager_config()
+        
+        # Check sentinel hosts
+        sentinel_hosts = pm_config.get('SENTINEL_HOSTS', '').split()
+        sentinel_status = {}
+        for host in sentinel_hosts:
+            if host:
+                sentinel_status[host] = ping_host(host)
+        
+        # Check wake hosts
+        wake_host_status = {}
+        for section, params in wake_hosts.items():
+            ip = params.get('IP', '')
+            if ip:
+                wake_host_status[section] = ping_host(ip)
+        
+        return jsonify({
+            'sentinel_status': sentinel_status,
+            'wake_host_status': wake_host_status
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80, debug=True)
