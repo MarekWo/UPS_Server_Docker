@@ -69,6 +69,7 @@ The logic is simple but effective:
 
   * A host machine that is **connected to the UPS** to run the container.
   * [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) installed on the host machine.
+  You may find my Wiki instruction helpful: [How to Install Docker Engine on Debian](https://wiki.wojtaszek.it/pl/home/apps/docker/installation).
   * A few reliable, always-on devices with static IPs on your network that are **NOT** connected to the UPS to act as sentinels.
 
 -----
