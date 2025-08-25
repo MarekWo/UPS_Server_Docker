@@ -53,8 +53,9 @@
     </h4>
     
     {% if wake_hosts %}
-        <div class="table-responsive">
-            <table class="table table-hover">
+        <!-- Desktop Table -->
+        <div class="table-responsive d-none d-lg-block">
+            <table class="table table-hover mobile-table">
                 <thead>
                     <tr>
                         <th>Name</th>
@@ -93,6 +94,47 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+
+        <!-- Mobile Cards -->
+        <div class="mobile-cards d-block d-lg-none">
+            {% for section, host in wake_hosts.items() %}
+            <div class="mobile-card">
+                <div class="mobile-card-header">{{ host.get('NAME', section) }}</div>
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label">IP Address:</span>
+                    <span class="mobile-card-value"><code>{{ host.get('IP', '') }}</code></span>
+                </div>
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label">MAC Address:</span>
+                    <span class="mobile-card-value"><code>{{ host.get('MAC', '') }}</code></span>
+                </div>
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label">Broadcast IP:</span>
+                    <span class="mobile-card-value"><code>{{ host.get('BROADCAST_IP', pm_config.get('DEFAULT_BROADCAST_IP', '')) }}</code></span>
+                </div>
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label">UPS Delay:</span>
+                    <span class="mobile-card-value">
+                        {% if host.get('SHUTDOWN_DELAY_MINUTES') %}
+                            <span class="badge bg-success">{{ host.get('SHUTDOWN_DELAY_MINUTES') }} min</span>
+                        {% else %}
+                            <span class="badge bg-secondary">None</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="mobile-card-actions">
+                    <button type="button" class="btn btn-warning btn-sm me-2" onclick="editWakeHost('{{ section }}', '{{ host.get('NAME', '') }}', '{{ host.get('IP', '') }}', '{{ host.get('MAC', '') }}', '{{ host.get('BROADCAST_IP', '') }}', '{{ host.get('SHUTDOWN_DELAY_MINUTES', '') }}')" title="Edit">
+                        <i class="fas fa-edit me-1"></i> Edit
+                    </button>
+                    <form method="POST" action="{{ url_for('delete_wake_host', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete host {{ host.get('NAME', section) }}?')">
+                        <button type="submit" class="btn btn-danger btn-sm" title="Delete">
+                            <i class="fas fa-trash me-1"></i> Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
         </div>
     {% else %}
         <div class="text-center text-muted py-4">

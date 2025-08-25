@@ -193,13 +193,22 @@ def index():
 @app.route('/config')
 def config():
     """Configuration page"""
-    pm_config, wake_hosts = read_power_manager_config()
-    ups_clients = get_ups_clients_from_wake_hosts(wake_hosts)
-    
-    return render_template('config.html',
-                         pm_config=pm_config,
-                         wake_hosts=wake_hosts,
-                         ups_clients=ups_clients)
+    try:
+        pm_config, wake_hosts = read_power_manager_config()
+        ups_clients = get_ups_clients_from_wake_hosts(wake_hosts)
+        
+        app.logger.info(f"PM Config: {pm_config}")
+        app.logger.info(f"Wake Hosts: {wake_hosts}")
+        app.logger.info(f"UPS Clients: {ups_clients}")
+        
+        return render_template('config.html',
+                             pm_config=pm_config,
+                             wake_hosts=wake_hosts,
+                             ups_clients=ups_clients)
+    except Exception as e:
+        app.logger.error(f"Error in config route: {str(e)}", exc_info=True)
+        flash(f'Error loading configuration: {str(e)}', 'error')
+        return f"Error: {str(e)}", 500
 
 @app.route('/save_main_config', methods=['POST'])
 def save_main_config():

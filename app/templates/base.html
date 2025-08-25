@@ -142,6 +142,73 @@
                 padding: 6px 12px;
                 font-size: 0.9rem;
             }
+            
+            /* Mobile-specific System Overview */
+            .system-overview-mobile .col-md-3 {
+                flex: 0 0 50%;
+                max-width: 50%;
+            }
+            
+            /* Mobile table styles - convert table to card layout */
+            .mobile-table {
+                display: none;
+            }
+            
+            .mobile-cards {
+                display: block;
+            }
+            
+            .mobile-card {
+                background: #fff;
+                border: 1px solid #dee2e6;
+                border-radius: 8px;
+                margin-bottom: 1rem;
+                padding: 1rem;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            
+            .mobile-card-header {
+                font-weight: 600;
+                color: var(--primary-color);
+                margin-bottom: 0.5rem;
+                padding-bottom: 0.5rem;
+                border-bottom: 1px solid #eee;
+            }
+            
+            .mobile-card-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 0.3rem;
+                padding: 0.2rem 0;
+            }
+            
+            .mobile-card-label {
+                font-weight: 500;
+                color: #666;
+                font-size: 0.9rem;
+            }
+            
+            .mobile-card-value {
+                font-size: 0.9rem;
+            }
+            
+            .mobile-card-actions {
+                margin-top: 0.75rem;
+                padding-top: 0.75rem;
+                border-top: 1px solid #eee;
+                text-align: right;
+            }
+        }
+        
+        @media (min-width: 769px) {
+            .mobile-table {
+                display: table;
+            }
+            
+            .mobile-cards {
+                display: none;
+            }
         }
         
         .loading {
@@ -269,6 +336,7 @@
         }
 
         function updateStatusIndicator(elementId, isOnline) {
+            // Update desktop version
             const indicator = document.getElementById(elementId);
             if (indicator) {
                 indicator.className = 'status-indicator ' + (isOnline ? 'online' : 'offline');
@@ -279,6 +347,19 @@
                 textElement.className = isOnline ? 'status-online' : 'status-offline';
                 textElement.innerHTML = '<i class="fas fa-' + (isOnline ? 'check-circle' : 'times-circle') + ' me-1"></i>' + 
                                        (isOnline ? 'Online' : 'Offline');
+            }
+            
+            // Update mobile version
+            const mobileIndicator = document.getElementById(elementId + '-mobile');
+            if (mobileIndicator) {
+                mobileIndicator.className = 'status-indicator ' + (isOnline ? 'online' : 'offline');
+            }
+            
+            const mobileTextElement = document.getElementById(elementId + '-text-mobile');
+            if (mobileTextElement) {
+                mobileTextElement.className = isOnline ? 'status-online' : 'status-offline';
+                mobileTextElement.innerHTML = '<i class="fas fa-' + (isOnline ? 'check-circle' : 'times-circle') + ' me-1"></i>' + 
+                                             (isOnline ? 'Online' : 'Offline');
             }
         }
 

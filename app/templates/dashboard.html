@@ -11,7 +11,7 @@
                 <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>System Overview</h5>
             </div>
             <div class="card-body">
-                <div class="row g-4">
+                <div class="row g-4 system-overview-mobile">
                     <div class="col-md-3 col-sm-6">
                         <div class="text-center">
                             <div class="h3 text-primary mb-1">
@@ -109,8 +109,9 @@
             </div>
             <div class="card-body">
                 {% if ups_clients %}
-                    <div class="table-responsive mobile-responsive">
-                        <table class="table table-sm">
+                    <!-- Desktop Table -->
+                    <div class="table-responsive mobile-responsive d-none d-md-block">
+                        <table class="table table-sm mobile-table">
                             <thead>
                                 <tr>
                                     <th>Name</th>
@@ -147,6 +148,40 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- Mobile Cards -->
+                    <div class="mobile-cards d-block d-md-none">
+                        {% for section, client in ups_clients.items() %}
+                        <div class="mobile-card">
+                            <div class="mobile-card-header">{{ client.name }}</div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">IP Address:</span>
+                                <span class="mobile-card-value"><code>{{ client.ip }}</code></span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">Status:</span>
+                                <span class="mobile-card-value">
+                                    <span id="wake-{{ section }}-mobile" class="status-indicator {{ 'online' if wake_host_status.get(section) else 'offline' }}"></span>
+                                    <span id="wake-{{ section }}-text-mobile" class="{{ 'status-online' if wake_host_status.get(section) else 'status-offline' }}">
+                                        <i class="fas fa-{{ 'check-circle' if wake_host_status.get(section) else 'times-circle' }} me-1"></i>
+                                        {{ 'Online' if wake_host_status.get(section) else 'Offline' }}
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">Delay:</span>
+                                <span class="mobile-card-value">
+                                    <span class="badge bg-info">{{ client.shutdown_delay }} min</span>
+                                </span>
+                            </div>
+                            <div class="mobile-card-actions">
+                                <button class="btn btn-warning btn-sm" onclick="sendWOL('{{ section }}', '{{ client.name }}')" title="Send Wake-on-LAN">
+                                    <i class="fas fa-power-off me-1"></i> Wake
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
                 {% else %}
                     <div class="text-center text-muted py-3">
                         <i class="fas fa-plug fa-2x mb-2"></i>
@@ -175,8 +210,8 @@
                 <h5 class="mb-0"><i class="fas fa-server me-2"></i>Other Managed Hosts</h5>
             </div>
             <div class="card-body">
-                <div class="table-responsive mobile-responsive">
-                    <table class="table table-sm">
+                <div class="table-responsive mobile-responsive d-none d-md-block">
+                    <table class="table table-sm mobile-table">
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -206,6 +241,34 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Mobile Cards -->
+                <div class="mobile-cards d-block d-md-none">
+                    {% for section, host in non_ups_hosts %}
+                    <div class="mobile-card">
+                        <div class="mobile-card-header">{{ host.get('NAME', section) }}</div>
+                        <div class="mobile-card-row">
+                            <span class="mobile-card-label">IP Address:</span>
+                            <span class="mobile-card-value"><code>{{ host.get('IP', '') }}</code></span>
+                        </div>
+                        <div class="mobile-card-row">
+                            <span class="mobile-card-label">Status:</span>
+                            <span class="mobile-card-value">
+                                <span id="wake-{{ section }}-mobile" class="status-indicator {{ 'online' if wake_host_status.get(section) else 'offline' }}"></span>
+                                <span id="wake-{{ section }}-text-mobile" class="{{ 'status-online' if wake_host_status.get(section) else 'status-offline' }}">
+                                    <i class="fas fa-{{ 'check-circle' if wake_host_status.get(section) else 'times-circle' }} me-1"></i>
+                                    {{ 'Online' if wake_host_status.get(section) else 'Offline' }}
+                                </span>
+                            </span>
+                        </div>
+                        <div class="mobile-card-actions">
+                            <button class="btn btn-warning btn-sm" onclick="sendWOL('{{ section }}', '{{ host.get('NAME', section) }}')" title="Send Wake-on-LAN">
+                                <i class="fas fa-power-off me-1"></i> Wake
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
