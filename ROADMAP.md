@@ -4,3 +4,4 @@
 * Power down test mode (to simulate power outage in one click)
 * UPS server log viewer from the Web UI
 * Disabling WoL for selected hosts in the Configuration
+* Remotely rebooting/shutting down hosts from the Dashboard
