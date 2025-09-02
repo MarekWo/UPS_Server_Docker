@@ -3,3 +3,4 @@
 * Sending email notification on power outage
 * Power down test mode (to simulate power outage in one click)
 * UPS server log viewer from the Web UI
+* Disabling WoL for selected hosts in the Configuration
