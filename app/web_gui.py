@@ -11,8 +11,10 @@ import os
 import sys
 import subprocess
 import ipaddress
+import json
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from werkzeug.exceptions import BadRequest
+
 
 # Add the current directory to Python path to import api module
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,8 +27,19 @@ app.secret_key = 'ups_server_gui_secret_key_change_in_production'
 POWER_MANAGER_CONFIG = "/etc/nut/power_manager.conf"
 PING_CMD = "/bin/ping"
 WAKEONLAN_CMD = "/usr/bin/wakeonlan"
+CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
 
 # --- Helper Functions ---
+
+def get_client_statuses():
+    """Reads the client status file."""
+    if not os.path.exists(CLIENT_STATUS_FILE):
+        return {}
+    try:
+        with open(CLIENT_STATUS_FILE, 'r') as f:
+            return json.load(f)
+    except (IOError, json.JSONDecodeError):
+        return {}
 
 def read_power_manager_config():
     """Read and parse power_manager.conf file"""
@@ -179,13 +192,17 @@ def index():
             if ip:
                 wake_host_status[section] = ping_host(ip)
         
+        # Get client statuses
+        client_statuses = get_client_statuses()
+
         return render_template('dashboard.html',
                              pm_config=pm_config,
                              wake_hosts=wake_hosts,
                              ups_clients=ups_clients,
                              sentinel_hosts=sentinel_hosts,
                              sentinel_status=sentinel_status,
-                             wake_host_status=wake_host_status)
+                             wake_host_status=wake_host_status,
+                             client_statuses=client_statuses) 
     except Exception as e:
         flash(f'Error loading configuration: {str(e)}', 'error')
         return render_template('dashboard.html')
@@ -451,6 +468,11 @@ def get_status():
         
     except Exception as e:
         return jsonify({'error': str(e)})
+    
+@app.route('/client_statuses')
+def get_client_statuses_json():
+    """Endpoint to get current client statuses as JSON."""
+    return jsonify(get_client_statuses())
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80, debug=True)

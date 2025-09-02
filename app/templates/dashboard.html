@@ -60,7 +60,7 @@
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-eye me-2"></i>Sentinel Hosts Status</h5>
-                <button class="btn btn-sm btn-outline-primary" onclick="refreshStatus()">
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshAllStatuses()">
                     <i class="fas fa-sync-alt"></i>
                 </button>
             </div>
@@ -126,12 +126,23 @@
                                 <tr>
                                     <td><strong>{{ client.name }}</strong></td>
                                     <td><code>{{ client.ip }}</code></td>
-                                    <td>
-                                        <span id="wake-{{ section }}" class="status-indicator {{ 'online' if wake_host_status.get(section) else 'offline' }}"></span>
-                                        <span id="wake-{{ section }}-text" class="{{ 'status-online' if wake_host_status.get(section) else 'status-offline' }}">
-                                            <i class="fas fa-{{ 'check-circle' if wake_host_status.get(section) else 'times-circle' }} me-1"></i>
-                                            {{ 'Online' if wake_host_status.get(section) else 'Offline' }}
-                                        </span>
+                                    <td id="client-status-{{ client.ip.replace('.', '-') }}">
+                                        {% set client_status = client_statuses.get(client.ip) %}
+                                        {% if client_status and client_status.status == 'shutdown_pending' %}
+                                            <span class="badge bg-warning text-dark">
+                                                <i class="fas fa-hourglass-half me-1"></i>
+                                                Shutting down in: {{ '%02d:%02d' % (client_status.remaining_seconds // 60, client_status.remaining_seconds % 60) }}
+                                            </span>
+                                            <div class="progress" style="height: 5px; margin-top: 5px;">
+                                                {% set progress = 100 - (client_status.remaining_seconds / (client_status.shutdown_delay * 60) * 100) %}
+                                                <div class="progress-bar bg-warning" role="progressbar" style="width: {{ progress }}%;" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100"></div>
+                                            </div>
+                                        {% else %}
+                                            <span id="wake-{{ section }}-text" class="{{ 'status-online' if wake_host_status.get(section) else 'status-offline' }}">
+                                                <i class="fas fa-{{ 'check-circle' if wake_host_status.get(section) else 'times-circle' }} me-1"></i>
+                                                {{ 'Online' if wake_host_status.get(section) else 'Offline' }}
+                                            </span>
+                                        {% endif %}
                                     </td>
                                     <td>
                                         <span class="badge bg-info">
@@ -160,7 +171,7 @@
                             </div>
                             <div class="mobile-card-row">
                                 <span class="mobile-card-label">Status:</span>
-                                <span class="mobile-card-value">
+                                <span class="mobile-card-value" id="client-status-mobile-{{ client.ip.replace('.', '-') }}">
                                     <span id="wake-{{ section }}-mobile" class="status-indicator {{ 'online' if wake_host_status.get(section) else 'offline' }}"></span>
                                     <span id="wake-{{ section }}-text-mobile" class="{{ 'status-online' if wake_host_status.get(section) else 'status-offline' }}">
                                         <i class="fas fa-{{ 'check-circle' if wake_host_status.get(section) else 'times-circle' }} me-1"></i>
@@ -295,7 +306,6 @@ function sendWOL(section, hostName) {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // Show success message
                 const alert = document.createElement('div');
                 alert.className = 'alert alert-success alert-dismissible fade show';
                 alert.innerHTML = `
@@ -305,16 +315,13 @@ function sendWOL(section, hostName) {
                 `;
                 document.querySelector('.container').insertBefore(alert, document.querySelector('.container').firstChild);
                 
-                // Auto-hide alert
                 setTimeout(() => {
                     const bsAlert = new bootstrap.Alert(alert);
                     bsAlert.close();
                 }, 3000);
                 
-                // Refresh status after a short delay
-                setTimeout(refreshStatus, 2000);
+                setTimeout(refreshAllStatuses, 2000); 
             } else {
-                // Show error message
                 const alert = document.createElement('div');
                 alert.className = 'alert alert-danger alert-dismissible fade show';
                 alert.innerHTML = `
@@ -324,7 +331,6 @@ function sendWOL(section, hostName) {
                 `;
                 document.querySelector('.container').insertBefore(alert, document.querySelector('.container').firstChild);
                 
-                // Auto-hide alert
                 setTimeout(() => {
                     const bsAlert = new bootstrap.Alert(alert);
                     bsAlert.close();
@@ -343,10 +349,109 @@ function sendWOL(section, hostName) {
             document.querySelector('.container').insertBefore(alert, document.querySelector('.container').firstChild);
         })
         .finally(() => {
-            // Restore button state
             button.disabled = false;
             button.innerHTML = originalContent;
         });
 }
+
+let currentWakeHostStatus = {{ wake_host_status|tojson }};
+
+function refreshAllStatuses() {
+    Promise.all([
+        fetch('/status').then(res => res.json()),
+        fetch('/client_statuses').then(res => res.json())
+    ]).then(([pingData, clientData]) => {
+        // Krok 2: Najpierw zaktualizuj globalny stan ping
+        if (pingData.wake_host_status) {
+            currentWakeHostStatus = pingData.wake_host_status;
+        }
+        
+        updatePingStatusUI(pingData.sentinel_status, 'sentinel');
+        updatePingStatusUI(pingData.wake_host_status, 'wake'); 
+        
+        updateClientStatusUI(clientData);
+
+    }).catch(error => console.error('Error refreshing statuses:', error));
+}
+
+function updatePingStatusUI(statuses, prefix) {
+    if (!statuses) return;
+    for (const [key, isOnline] of Object.entries(statuses)) {
+        const elementId = prefix + '-' + key.replace(/\./g, '-');
+        
+        const textElement = document.getElementById(elementId + '-text');
+        if (textElement) {
+            textElement.className = isOnline ? 'status-online' : 'status-offline';
+            textElement.innerHTML = `<i class="fas fa-${isOnline ? 'check-circle' : 'times-circle'} me-1"></i> ${isOnline ? 'Online' : 'Offline'}`;
+        }
+        
+        const mobileTextElement = document.getElementById(elementId + '-text-mobile');
+        if (mobileTextElement) {
+            const indicator = document.getElementById(elementId + '-mobile');
+            if(indicator) indicator.className = 'status-indicator ' + (isOnline ? 'online' : 'offline');
+            
+            mobileTextElement.className = isOnline ? 'status-online' : 'status-offline';
+            mobileTextElement.innerHTML = `<i class="fas fa-${isOnline ? 'check-circle' : 'times-circle'} me-1"></i> ${isOnline ? 'Online' : 'Offline'}`;
+        }
+    }
+}
+
+function updateClientStatusUI(clientStatuses) {
+    const upsClients = {{ ups_clients|tojson }};
+
+    for (const [section, client] of Object.entries(upsClients)) {
+        const statusCell = document.getElementById(`client-status-${client.ip.replace(/\./g, '-')}`);
+        const statusCellMobile = document.getElementById(`client-status-mobile-${client.ip.replace(/\./g, '-')}`);
+
+        if (!statusCell && !statusCellMobile) continue;
+
+        const detailedStatus = clientStatuses[client.ip];
+
+        if (detailedStatus && detailedStatus.status === 'shutdown_pending' && detailedStatus.remaining_seconds > 0) {
+            const minutes = Math.floor(detailedStatus.remaining_seconds / 60);
+            const seconds = detailedStatus.remaining_seconds % 60;
+            const formattedTime = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+            const progress = 100 - (detailedStatus.remaining_seconds / (detailedStatus.shutdown_delay * 60) * 100);
+
+            const countdownHtml = `
+                <span class="badge bg-warning text-dark">
+                    <i class="fas fa-hourglass-half me-1"></i>
+                    Shutting down in: ${formattedTime}
+                </span>
+                <div class="progress" style="height: 5px; margin-top: 5px;">
+                    <div class="progress-bar bg-warning" role="progressbar" style="width: ${progress}%;" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            `;
+            if (statusCell) statusCell.innerHTML = countdownHtml;
+            if (statusCellMobile) statusCellMobile.innerHTML = countdownHtml;
+
+        } else {            
+            const isOnline = currentWakeHostStatus[section]; 
+            
+            const onlineOfflineHtml = `
+                <span id="wake-${section}-text" class="${isOnline ? 'status-online' : 'status-offline'}">
+                    <i class="fas fa-${isOnline ? 'check-circle' : 'times-circle'} me-1"></i>
+                    ${isOnline ? 'Online' : 'Offline'}
+                </span>
+            `;
+            const onlineOfflineHtmlMobile = `
+                <span id="wake-${section}-mobile" class="status-indicator ${isOnline ? 'online' : 'offline'}"></span>
+                <span id="wake-${section}-text-mobile" class="${isOnline ? 'status-online' : 'status-offline'}">
+                    <i class="fas fa-${isOnline ? 'check-circle' : 'times-circle'} me-1"></i>
+                    ${isOnline ? 'Online' : 'Offline'}
+                </span>
+            `;
+
+            if (statusCell) statusCell.innerHTML = onlineOfflineHtml;
+            if (statusCellMobile) statusCellMobile.innerHTML = onlineOfflineHtmlMobile;
+        }
+    }
+}
+
+// Refresh statuses every 5 seconds for a smooth countdown
+document.addEventListener('DOMContentLoaded', function() {
+    refreshAllStatuses(); // Initial call
+    setInterval(refreshAllStatuses, 5000); // Refresh every 5 seconds
+});
 </script>
 {% endblock %}

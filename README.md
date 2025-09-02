@@ -23,8 +23,10 @@ The logic is simple but effective:
 2.  **Decide:**
       * If **at least one** sentinel host is online, the script assumes grid power is OK and sets the virtual NUT server's status to `OL` (Online).
       * If **all** sentinel hosts are offline, the script assumes a power failure and sets the status to `OB LB` (On Battery, Low Battery).
-3.  **Act:**
-      * When NUT clients see the `OB LB` status, they fetch their specific shutdown delay from the built-in API and initiate a graceful shutdown.
+3.  **Act & Report:**
+      * When NUT clients (like `UPS_monitor`) see the `OB LB` status, they fetch their specific shutdown delay from the built-in API.
+      * The clients then initiate a graceful shutdown countdown and **report their status (e.g., "shutdown_pending") and remaining time back to the server's API**.
+      * The Web GUI displays this status in real-time, showing which machines are shutting down and how much time they have left.
       * When power is restored, the script sets the status back to `OL` and, after a configurable delay, sends Wake-on-LAN (WoL) packets to wake the servers that were shut down.
 
 -----
@@ -34,8 +36,8 @@ The logic is simple but effective:
   * **Hardware-Independent:** Works with any UPS because it doesn't require a direct data connection.
   * **Easy Deployment:** Fully containerized and managed with a single `docker-compose.yml` file.
   * **Modern Web GUI:** Intuitive web interface for configuration and monitoring, optimized for both desktop and mobile devices.
-  * **Centralized Management API:** A lightweight REST API serves client configurations (`/config`) and live UPS status (`/upsc`), centralizing all client interactions.
-  * **Live Status Monitoring:** Real-time status monitoring of all sentinel hosts and managed clients with automatic refresh.
+  * **Centralized Management API:** A lightweight REST API serves client configurations (`/config`), live UPS status (`/upsc`), and receives client status updates (`/status`), centralizing all interactions.
+  * **Live Client Shutdown Monitoring:** The dashboard displays a real-time countdown for each client that is preparing for shutdown, providing a clear overview of the system's state during a power outage.
   * **Standard-Compliant:** Controls a standard NUT server, making it compatible with any NUT client (Linux, Windows, Synology DSM, etc.).
   * **Automated Recovery:** Includes a delayed Wake-on-LAN function to automatically restart servers after stable power has returned.
   * **Unified Configuration:** Single configuration file (`power_manager.conf`) manages all aspects of the system.
@@ -46,21 +48,23 @@ The logic is simple but effective:
 ### Project Structure
 
 ```
+
 .
-├── app/                  # Main application scripts
-│   ├── power_manager.sh  # Core monitoring script
-│   ├── api.py           # REST API server
-│   ├── web_gui.py       # Web interface application
-│   └── templates/       # HTML templates for web GUI
-├── config/              # All user-editable configuration files
-│   └── power_manager.conf # Main configuration file
-├── cron/                # Cron job definition
-├── logrotate/           # Log rotation configuration
-├── rsyslog/             # (Optional) Syslog forwarding configuration
-├── .gitignore           # Prevents local configs from being committed
-├── Dockerfile           # The blueprint for the container image
-├── docker-compose.yml   # The easy-run file for Docker Compose
-└── entrypoint.sh        # The container's startup script
+├── app/                    # Main application scripts
+│   ├── power_manager.sh    # Core monitoring script
+│   ├── api.py              # REST API server
+│   ├── web_gui.py          # Web interface application
+│   └── templates/          # HTML templates for web GUI
+├── config/                 # All user-editable configuration files
+│   └── power_manager.conf  # Main configuration file
+├── cron/                   # Cron job definition
+├── logrotate/              # Log rotation configuration
+├── rsyslog/                # (Optional) Syslog forwarding configuration
+├── .gitignore              # Prevents local configs from being committed
+├── Dockerfile              # The blueprint for the container image
+├── docker-compose.yml      # The easy-run file for Docker Compose
+└── entrypoint.sh           # The container's startup script
+
 ```
 
 -----
@@ -71,6 +75,8 @@ The logic is simple but effective:
   * [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) installed on the host machine.
   You may find my Wiki instruction helpful: [How to Install Docker Engine on Debian](https://wiki.wojtaszek.it/pl/home/apps/docker/installation).
   * A few reliable, always-on devices with static IPs on your network that are **NOT** connected to the UPS to act as sentinels.
+  * `curl`, `git` packages installed on the host.
+
 
 -----
 
@@ -79,7 +85,7 @@ The logic is simple but effective:
 1.  **Clone the Repository:**
 
     ```bash
-    git clone https://github.com/MarekWo/UPS_Server_Docker.git /opt/ups-server-docker
+    git clone [https://github.com/MarekWo/UPS_Server_Docker.git](https://github.com/MarekWo/UPS_Server_Docker.git) /opt/ups-server-docker
     cd /opt/ups-server-docker
     ```
 
@@ -125,7 +131,7 @@ The logic is simple but effective:
 
       * First, copy the example configuration file:
         ```bash
-        cp rsyslog/custom.conf.example rsyslog/custom.conf
+        cp rsyslog/custom.conf.example /etc/rsyslog.d/custom.conf
         ```
       * Then, edit `rsyslog/custom.conf` and replace the placeholder IP address and port with your syslog server details.
 
@@ -185,8 +191,6 @@ The simplest way to enable WoL is to add the `network_mode: host` directive to y
 Your `docker-compose.yml` should be modified to include this line:
 
 ```yaml
-version: '3.8'
-
 services:
   ups-server:
     build: .
@@ -210,102 +214,6 @@ services:
 If you do not need the Wake-on-LAN feature or are not comfortable with using host network mode, simply **do not add** the `network_mode: host` line.
 
 In this case, the NUT server and API will function correctly for monitoring and shutting down clients, but the ability to automatically wake them up will be disabled.
-
------
-
-## Web Interface
-
-The UPS Server includes a modern, responsive web interface for easy configuration and monitoring.
-![Dashboard](/images/web-ui-dashboard.png)
-
-### Accessing the Web GUI
-
-After starting the container, the web interface will be available at:
-
-```
-http://<UPS_SERVER_IP>
-```
-
-For example, if your UPS server host has IP `192.168.1.10`:
-```
-http://192.168.1.10
-```
-
-### Web GUI Features
-
-* **Dashboard**: Real-time monitoring of system status, sentinel hosts, and UPS clients
-* **Configuration Management**: Easy-to-use forms for managing all system settings
-* **Live Status Updates**: Automatic refresh of host status every 30 seconds
-* **Mobile Optimized**: Responsive design that works on all devices
-* **One-Click Wake-on-LAN**: Send WoL packets directly from the interface
-
-For detailed Web GUI documentation, see [WEB_GUI_README.md](WEB_GUI_README.md).
-
------
-
-### API Endpoints
-
-The server provides a REST API for client configuration and status monitoring. All endpoints require an `Authorization` header with a bearer token. You must change the hardcoded token in `app/api.py` for a production environment.
-
-**Example Request:**
-```bash
-curl -H "Authorization: Bearer <your_secret_token>" http://<server_ip>:5000/upsc
-```
-
-#### `GET /config`
-This endpoint provides client-specific shutdown configuration. The client's IP address is used to look up its settings in the `WAKE_HOST_X` sections of `power_manager.conf`.
-
-*   **Query Parameter:** `ip=<client_ip>` (optional, falls back to request source IP).
-*   **Returns:** A JSON object with the client's configuration, including the dynamically generated `UPS_NAME` and `SHUTDOWN_DELAY_MINUTES`.
-
-**Example Response (`/config?ip=192.168.1.12`):**
-```json
-{
-  "SHUTDOWN_DELAY_MINUTES": "10",
-  "UPS_NAME": "ups@192.168.1.10"
-}
-```
-
-#### `GET /upsc`
-This endpoint provides live status information from the NUT server, equivalent to running the `upsc` command locally, but with clean, nested JSON output.
-
-*   **Returns:** A nested JSON object containing all available UPS variables. This is ideal for monitoring dashboards or advanced client-side logic.
-
-**Example Response:**
-```json
-{
-  "device": {
-    "mfr": "Dummy Manufacturer",
-    "model": "Dummy UPS",
-    "type": "ups"
-  },
-  "driver": {
-    "name": "dummy-ups",
-    "parameter": {
-      "mode": "dummy",
-      "pollinterval": 2,
-      "port": "/var/run/nut/virtual.device"
-    },
-    "version": "2.8.0",
-    "version.internal": 0.15
-  },
-  "ups": {
-    "mfr": "Dummy Manufacturer",
-    "model": "Dummy UPS",
-    "status": "OL"
-  }
-}
-```
-
------
-
-### Services and Ports
-
-The container provides the following services:
-
-- **Port 80**: Web GUI interface
-- **Port 5000**: REST API for client configuration
-- **Port 3493**: NUT server for UPS clients
 
 -----
 
@@ -339,6 +247,122 @@ You can also monitor the `power_manager.log` file in the `./logs` directory, whi
 
 -----
 
+### Web Interface
+
+The UPS Server includes a modern, responsive web interface for easy configuration and monitoring.
+
+### Accessing the Web GUI
+
+After starting the container, the web interface will be available at:
+
+```
+http://<UPS_SERVER_IP>
+```
+
+For example, if your UPS server host has IP `192.168.1.10`:
+
+```
+http://192.168.1.10
+```
+
+### Web GUI Features
+
+  * **Dashboard**: Real-time monitoring of system status, sentinel hosts, and UPS clients. Shows a live countdown for clients that are shutting down.
+  * **Configuration Management**: Easy-to-use forms for managing all system settings.
+  * **Live Status Updates**: Automatic refresh of host statuses every 5 seconds.
+  * **Mobile Optimized**: Responsive design that works on all devices.
+  * **One-Click Wake-on-LAN**: Send WoL packets directly from the interface.
+
+For detailed Web GUI documentation, see [WEB_GUI_README.md](WEB_GUI_README.md).
+
+-----
+
+### API Endpoints
+
+The server provides a REST API for client configuration and status monitoring. All endpoints require an `Authorization` header with a bearer token. You must change the hardcoded token in `app/api.py` for a production environment.
+
+**Example Request:**
+
+```bash
+curl -H "Authorization: Bearer <your_secret_token>" http://<server_ip>:5000/upsc
+```
+
+#### `GET /config`
+
+This endpoint provides client-specific shutdown configuration. The client's IP address is used to look up its settings in the `WAKE_HOST_X` sections of `power_manager.conf`.
+
+  * **Query Parameter:** `ip=<client_ip>` (optional, falls back to request source IP).
+  * **Returns:** A JSON object with the client's configuration, including the dynamically generated `UPS_NAME` and `SHUTDOWN_DELAY_MINUTES`.
+
+**Example Response (`/config?ip=192.168.1.12`):**
+
+```json
+{
+  "SHUTDOWN_DELAY_MINUTES": "10",
+  "UPS_NAME": "ups@192.168.1.10"
+}
+```
+
+#### `POST /status`
+
+This endpoint allows UPS clients to report their current status back to the server. This is used to display the shutdown countdown in the Web GUI.
+
+  * **Body:** A JSON object containing the client's status.
+  * **Example Payload:**
+    ```json
+    {
+      "ip": "192.168.1.12",
+      "status": "shutdown_pending",
+      "remaining_seconds": 245,
+      "shutdown_delay": 5
+    }
+    ```
+
+#### `GET /upsc`
+
+This endpoint provides live status information from the NUT server, equivalent to running the `upsc` command locally, but with clean, nested JSON output.
+
+  * **Returns:** A nested JSON object containing all available UPS variables. This is ideal for monitoring dashboards or advanced client-side logic.
+
+**Example Response:**
+
+```json
+{
+  "device": {
+    "mfr": "Dummy Manufacturer",
+    "model": "Dummy UPS",
+    "type": "ups"
+  },
+  "driver": {
+    "name": "dummy-ups",
+    "parameter": {
+      "mode": "dummy",
+      "pollinterval": 2,
+      "port": "/var/run/nut/virtual.device"
+    },
+    "version": "2.8.0",
+    "version.internal": 0.15
+  },
+  "ups": {
+    "mfr": "Dummy Manufacturer",
+    "model": "Dummy UPS",
+    "status": "OL"
+  }
+}
+```
+
+-----
+
+### Services and Ports
+
+The container provides the following services:
+
+  - **Port 80**: Web GUI interface
+  - **Port 5000**: REST API for client configuration
+  - **Port 3493**: NUT server for UPS clients
+
+-----
+
 ### Updating
 
 To update the application to the latest version from GitHub:
@@ -359,24 +383,27 @@ To update the application to the latest version from GitHub:
 
 If you're upgrading from a version that used separate `upshub.conf` configuration:
 
-1. **Backup your current configuration:**
-   ```bash
-   cp config/power_manager.conf config/power_manager.conf.backup
-   cp config/upshub.conf config/upshub.conf.backup
-   ```
+1.  **Backup your current configuration:**
 
-2. **Migrate UPS client settings:**
-   Add `SHUTDOWN_DELAY_MINUTES` parameter to appropriate `[WAKE_HOST_X]` sections in `power_manager.conf` based on your old `upshub.conf` settings.
+    ```bash
+    cp config/power_manager.conf config/power_manager.conf.backup
+    cp config/upshub.conf config/upshub.conf.backup
+    ```
 
-3. **Remove old configuration:**
-   ```bash
-   rm config/upshub.conf
-   ```
+2.  **Migrate UPS client settings:**
+    Add `SHUTDOWN_DELAY_MINUTES` parameter to appropriate `[WAKE_HOST_X]` sections in `power_manager.conf` based on your old `upshub.conf` settings.
 
-4. **Update and restart:**
-   ```bash
-   docker compose up --build -d
-   ```
+3.  **Remove old configuration:**
+
+    ```bash
+    rm config/upshub.conf
+    ```
+
+4.  **Update and restart:**
+
+    ```bash
+    docker compose up --build -d
+    ```
 
 -----
 

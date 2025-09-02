@@ -4,13 +4,15 @@
 """
 UPS Hub REST API
 Author: MarekWo
-Description: A lightweight Flask-based REST API to serve configuration
-             to UPS monitor clients from a central power_manager.conf file.
+Description: Enhanced Flask-based REST API with bidirectional communication
+             for UPS monitor clients.
 """
 
 import configparser
 import os
 import subprocess
+import json
+from datetime import datetime
 from flask import Flask, jsonify, request, abort
 
 # --- Configuration ---
@@ -20,6 +22,7 @@ API_TOKEN = "ggJVLx8MtcZvs84DVrSxzsiJPb5VoR4EMGUu"
 UPSC_CMD = "/usr/bin/upsc"
 POWER_MANAGER_CONFIG = "/etc/nut/power_manager.conf"
 UPS_CONF_FILE = "/etc/nut/ups.conf"
+CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
 
 app = Flask(__name__)
 
@@ -294,6 +297,50 @@ def get_config():
     except Exception as e:
         app.logger.error(f"Error reading configuration: {e}")
         abort(500, description=f"Server configuration error: {e}")
+
+@app.route('/status', methods=['POST'])
+def update_client_status():
+    """
+    Endpoint for clients to post their status.
+    """
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or auth_header != f"Bearer {API_TOKEN}":
+        abort(401, description="Unauthorized: Missing or invalid API token.")
+
+    data = request.get_json()
+    if not data or 'ip' not in data or 'status' not in data:
+        abort(400, description="Bad Request: Missing 'ip' or 'status' in JSON payload.")
+
+    client_ip = data['ip']
+    client_status = {
+        'status': data['status'],
+        'remaining_seconds': data.get('remaining_seconds', None),
+        'shutdown_delay': data.get('shutdown_delay', None),
+        'timestamp': datetime.utcnow().isoformat()
+    }
+
+    # Read existing statuses
+    try:
+        if os.path.exists(CLIENT_STATUS_FILE):
+            with open(CLIENT_STATUS_FILE, 'r') as f:
+                statuses = json.load(f)
+        else:
+            statuses = {}
+    except (IOError, json.JSONDecodeError):
+        statuses = {}
+
+    # Update status for the specific client
+    statuses[client_ip] = client_status
+    
+    # Write back to the file
+    try:
+        with open(CLIENT_STATUS_FILE, 'w') as f:
+            json.dump(statuses, f)
+    except IOError as e:
+        app.logger.error(f"Could not write client status file: {e}")
+        abort(500, description="Server error: Could not write status file.")
+
+    return jsonify({"message": "Status updated successfully"}), 200
 
 if __name__ == '__main__':
     # For production, use a proper WSGI server like Gunicorn or uWSGI.
