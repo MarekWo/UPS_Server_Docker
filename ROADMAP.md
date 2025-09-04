@@ -9,4 +9,4 @@
 * Remotely rebooting/shutting down hosts from the Dashboard
 
 ## Bug fixes
-No bugs found yet :)
+* ***Not sending shutdown status to the UPS server by Windows clients [fixed]***
