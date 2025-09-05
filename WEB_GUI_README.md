@@ -7,12 +7,16 @@ The Web GUI for UPS Server provides easy management of system configuration thro
 ## Web GUI Features
 
 ### 🏠 Dashboard
-- **System Overview**: Displays numerical statistics (number of hosts, sentinels, clients)
-- **Sentinel Host Status**: Real-time monitoring of hosts used to detect power failures
-- **UPS Client Status**: Shows online/offline status of all UPS clients. **Displays a live countdown** for clients that are in the process of shutting down.
-- **Managed Host Status**: Displays status of all hosts with Wake-on-LAN capability
-- **Automatic Refresh**: Host status is automatically refreshed every 5 seconds for a smooth user experience.
-- **One-Click WoL**: Buttons to instantly send Wake-on-LAN signals to selected hosts.
+-   **System Overview**: Displays key statistics (number of managed hosts, sentinels, UPS clients).
+-   **Sentinel Host Status**: Real-time monitoring of sentinel devices used to detect power failures.
+-   **UPS Client Status**: Shows a live, detailed status reported directly by each UPS client. The possible states include:
+ -   `Online`: The client is running and reporting correctly.
+ -   `Shutting down...`: A live countdown for clients that are in the process of shutting down.
+ -   `WoL sent`: The server has sent a Wake-on-LAN packet, and is waiting for the client to boot up.
+ -   `Status Stale`: The client has stopped reporting its status, indicating a potential issue.
+ -   `Awaiting status...`: The client has not yet reported its status for the first time.
+-   **Automatic Refresh**: Statuses are automatically refreshed every 5 seconds.
+-   **One-Click WoL**: Buttons to manually send Wake-on-LAN signals to hosts.
 
 ![Dashboard](/images/web-ui-dashboard.png)
 

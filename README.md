@@ -24,10 +24,10 @@ The logic is simple but effective:
       * If **at least one** sentinel host is online, the script assumes grid power is OK and sets the virtual NUT server's status to `OL` (Online).
       * If **all** sentinel hosts are offline, the script assumes a power failure and sets the status to `OB LB` (On Battery, Low Battery).
 3.  **Act & Report:**
-      * When NUT clients (like `UPS_monitor`) see the `OB LB` status, they fetch their specific shutdown delay from the built-in API.
-      * The clients then initiate a graceful shutdown countdown and **report their status (e.g., "shutdown_pending") and remaining time back to the server's API**.
-      * The Web GUI displays this status in real-time, showing which machines are shutting down and how much time they have left.
-      * When power is restored, the script sets the status back to `OL` and, after a configurable delay, sends Wake-on-LAN (WoL) packets to wake the servers that were shut down.
+    * NUT clients (`UPS_monitor` scripts) periodically check the server's status. When they detect `OB LB`, they initiate a graceful shutdown countdown.
+    * Clients are responsible for **actively reporting their status** (e.g., `online`, `shutdown_pending` with remaining time) back to the server's API on every check.
+    * The Web GUI displays a live feed of these reported statuses. It can now show detailed states like `Online`, `Shutting down...`, `WoL sent`, or `Status Stale` if a client stops reporting.
+    * When power is restored, the `power_manager.sh` script waits a configurable delay and sends Wake-on-LAN (WoL) packets to offline clients. It also sets their status to `WoL sent` in the dashboard, providing clear feedback on the recovery process.
 
 -----
 

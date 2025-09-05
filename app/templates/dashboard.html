@@ -406,54 +406,86 @@ function updateClientStatusUI(clientStatuses) {
         if (!statusCell && !statusCellMobile) continue;
 
         const detailedStatus = clientStatuses[client.ip];
+        let statusHtml = '';
 
-        if (detailedStatus && detailedStatus.status === 'shutdown_pending' && detailedStatus.remaining_seconds > 0) {
-            const minutes = Math.floor(detailedStatus.remaining_seconds / 60);
-            const seconds = detailedStatus.remaining_seconds % 60;
-            const formattedTime = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
-            const progress = 100 - (detailedStatus.remaining_seconds / (detailedStatus.shutdown_delay * 60) * 100);
+        if (detailedStatus) {
+            const timestamp = new Date(detailedStatus.timestamp);
+            const now = new Date();
+            // Check how many minutes have passed since the last update
+            const minutesSinceUpdate = (now - timestamp) / (1000 * 60);
 
-            const countdownHtml = `
-                <span class="badge bg-warning text-dark">
-                    <i class="fas fa-hourglass-half me-1"></i>
-                    Shutting down in: ${formattedTime}
-                </span>
-                <div class="progress" style="height: 5px; margin-top: 5px;">
-                    <div class="progress-bar bg-warning" role="progressbar" style="width: ${progress}%;" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"></div>
-                </div>
-            `;
-            if (statusCell) statusCell.innerHTML = countdownHtml;
-            if (statusCellMobile) statusCellMobile.innerHTML = countdownHtml;
+            // Handle various statuses provided by the client/server
+            switch (detailedStatus.status) {
+                case 'shutdown_pending':
+                    const minutes = Math.floor(detailedStatus.remaining_seconds / 60);
+                    const seconds = detailedStatus.remaining_seconds % 60;
+                    const formattedTime = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+                    const progress = 100 - (detailedStatus.remaining_seconds / (detailedStatus.shutdown_delay * 60) * 100);
+                    statusHtml = `
+                        <span class="badge bg-warning text-dark">
+                            <i class="fas fa-hourglass-half me-1"></i>
+                            Shutting down in: ${formattedTime}
+                        </span>
+                        <div class="progress" style="height: 5px; margin-top: 5px;">
+                            <div class="progress-bar bg-warning" role="progressbar" style="width: ${progress}%;" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                    `;
+                    break;
 
-        } else if (detailedStatus && detailedStatus.status === 'wol_sent') {
-            const wolSentHtml = `
-                <span class="badge bg-info">
-                    <i class="fas fa-magic me-1"></i>
-                    WoL sent
-                </span>
-            `;
-            if (statusCell) statusCell.innerHTML = wolSentHtml;
-            if (statusCellMobile) statusCellMobile.innerHTML = wolSentHtml;
-            
-        } else {            
-            const isOnline = currentWakeHostStatus[section]; 
-            
-            const onlineOfflineHtml = `
-                <span id="wake-${section}-text" class="${isOnline ? 'status-online' : 'status-offline'}">
-                    <i class="fas fa-${isOnline ? 'check-circle' : 'times-circle'} me-1"></i>
-                    ${isOnline ? 'Online' : 'Offline'}
-                </span>
-            `;
-            const onlineOfflineHtmlMobile = `
-                <span id="wake-${section}-mobile" class="status-indicator ${isOnline ? 'online' : 'offline'}"></span>
-                <span id="wake-${section}-text-mobile" class="${isOnline ? 'status-online' : 'status-offline'}">
-                    <i class="fas fa-${isOnline ? 'check-circle' : 'times-circle'} me-1"></i>
-                    ${isOnline ? 'Online' : 'Offline'}
-                </span>
-            `;
+                case 'wol_sent':
+                    statusHtml = `
+                        <span class="badge bg-info">
+                            <i class="fas fa-magic me-1"></i>
+                            WoL sent
+                        </span>
+                    `;
+                    break;
+                
+                case 'online':
+                    // If the last update is too old, consider the client offline
+                    if (minutesSinceUpdate > 2.5) {
+                        statusHtml = `
+                            <span class="status-offline">
+                                <i class="fas fa-question-circle me-1"></i>
+                                Status Stale
+                            </span>
+                        `;
+                    } else {
+                        statusHtml = `
+                            <span class="status-online">
+                                <i class="fas fa-check-circle me-1"></i>
+                                Online
+                            </span>
+                        `;
+                    }
+                    break;
 
-            if (statusCell) statusCell.innerHTML = onlineOfflineHtml;
-            if (statusCellMobile) statusCellMobile.innerHTML = onlineOfflineHtmlMobile;
+                default:
+                    statusHtml = `
+                        <span class="text-muted">
+                            <i class="fas fa-info-circle me-1"></i>
+                            ${detailedStatus.status}
+                        </span>
+                    `;
+                    break;
+            }
+        } else {
+            // If there's no status at all for this client
+            statusHtml = `
+                <span class="text-muted">
+                    <i class="fas fa-clock me-1"></i>
+                    Awaiting status...
+                </span>
+            `;
+        }
+
+        if (statusCell) statusCell.innerHTML = statusHtml;
+        
+        // Mobile view needs a slightly different structure
+        if (statusCellMobile) {
+            const isOnline = detailedStatus && detailedStatus.status === 'online' && minutesSinceUpdate <= 2.5;
+            const indicatorClass = isOnline ? 'online' : 'offline'; // Simplified for indicator dot
+            statusCellMobile.innerHTML = `<span class="status-indicator ${indicatorClass}"></span> ${statusHtml}`;
         }
     }
 }
