@@ -316,7 +316,7 @@ def update_client_status():
         'status': data['status'],
         'remaining_seconds': data.get('remaining_seconds', None),
         'shutdown_delay': data.get('shutdown_delay', None),
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': datetime.utcnow().isoformat() + "Z"
     }
 
     # Read existing statuses
