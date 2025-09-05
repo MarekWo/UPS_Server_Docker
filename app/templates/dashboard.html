@@ -406,6 +406,7 @@ function updateClientStatusUI(clientStatuses) {
         if (!statusCell && !statusCellMobile) continue;
 
         const detailedStatus = clientStatuses[client.ip];
+        const isPingable = currentWakeHostStatus[section]; // Server's ping status
         let statusHtml = '';
         let minutesSinceUpdate = 0;
 
@@ -413,97 +414,85 @@ function updateClientStatusUI(clientStatuses) {
             const timestamp = new Date(detailedStatus.timestamp);
             const now = new Date();
             minutesSinceUpdate = (now - timestamp) / (1000 * 60);
+        }
 
-            // Handle various statuses provided by the client/server
-            switch (detailedStatus.status) {
-                case 'shutdown_pending':
-                    const minutes = Math.floor(detailedStatus.remaining_seconds / 60);
-                    const seconds = detailedStatus.remaining_seconds % 60;
-                    const formattedTime = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
-                    const progress = 100 - (detailedStatus.remaining_seconds / (detailedStatus.shutdown_delay * 60) * 100);
-                    statusHtml = `
-                        <span class="badge bg-warning text-dark">
-                            <i class="fas fa-hourglass-half me-1"></i>
-                            Shutting down in: ${formattedTime}
-                        </span>
-                        <div class="progress" style="height: 5px; margin-top: 5px;">
-                            <div class="progress-bar bg-warning" role="progressbar" style="width: ${progress}%;" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"></div>
-                        </div>
-                    `;
-                    break;
+        // --- NEW HYBRID LOGIC ---
 
-                case 'shutting_down':
-                    // If the 'shutting_down' status is older than 3 minutes, assume the host is offline.
-                    if (minutesSinceUpdate > 3) {
-                        statusHtml = `
-                            <span class="status-offline">
-                                <i class="fas fa-times-circle me-1"></i>
-                                Offline
-                            </span>
-                        `;
-                    } else {
-                        statusHtml = `
-                            <span class="badge bg-danger">
-                                <i class="fas fa-power-off me-1"></i>
-                                Shutting Down...
-                            </span>
-                        `;
-                    }
-                    break;
-
-                case 'wol_sent':
-                    statusHtml = `
-                        <span class="badge bg-info">
-                            <i class="fas fa-magic me-1"></i>
-                            WoL sent
-                        </span>
-                    `;
-                    break;
-                
-                case 'online':
-                    // If the last update is too old, consider the client status stale.
-                    if (minutesSinceUpdate > 2.5) {
-                        statusHtml = `
-                            <span class="status-offline">
-                                <i class="fas fa-question-circle me-1"></i>
-                                Status Stale
-                            </span>
-                        `;
-                    } else {
-                        statusHtml = `
-                            <span class="status-online">
-                                <i class="fas fa-check-circle me-1"></i>
-                                Online
-                            </span>
-                        `;
-                    }
-                    break;
-
-                default:
-                    statusHtml = `
-                        <span class="text-muted">
-                            <i class="fas fa-info-circle me-1"></i>
-                            ${detailedStatus.status}
-                        </span>
-                    `;
-                    break;
+        // Case 1: Client is reporting 'online'
+        if (detailedStatus && detailedStatus.status === 'online') {
+            if (!isPingable) {
+                // HYBRID CHECK: Client reported 'online' but is not reachable by the server.
+                statusHtml = `
+                    <span class="status-offline">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        Unreachable
+                    </span>`;
+            } else if (minutesSinceUpdate > 2.5) {
+                // Client is reachable, but its own reporting is stale.
+                statusHtml = `
+                    <span class="status-offline">
+                        <i class="fas fa-question-circle me-1"></i>
+                        Status Stale
+                    </span>`;
+            } else {
+                // All good: Client reports online, is reachable, and status is fresh.
+                statusHtml = `
+                    <span class="status-online">
+                        <i class="fas fa-check-circle me-1"></i>
+                        Online
+                    </span>`;
             }
-        } else {
-            // If there's no status at all for this client
+        }
+        // Case 2: Client is in a shutdown state
+        else if (detailedStatus && detailedStatus.status === 'shutdown_pending') {
+            const minutes = Math.floor(detailedStatus.remaining_seconds / 60);
+            const seconds = detailedStatus.remaining_seconds % 60;
+            const formattedTime = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+            const progress = 100 - (detailedStatus.remaining_seconds / (detailedStatus.shutdown_delay * 60) * 100);
             statusHtml = `
-                <span class="text-muted">
-                    <i class="fas fa-clock me-1"></i>
-                    Awaiting status...
+                <span class="badge bg-warning text-dark">
+                    <i class="fas fa-hourglass-half me-1"></i>
+                    Shutting down in: ${formattedTime}
                 </span>
-            `;
+                <div class="progress" style="height: 5px; margin-top: 5px;">
+                    <div class="progress-bar bg-warning" role="progressbar" style="width: ${progress}%;" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>`;
+        }
+        else if (detailedStatus && detailedStatus.status === 'shutting_down') {
+            if (minutesSinceUpdate > 3) {
+                statusHtml = `<span class="status-offline"><i class="fas fa-times-circle me-1"></i>Offline</span>`;
+            } else {
+                statusHtml = `<span class="badge bg-danger"><i class="fas fa-power-off me-1"></i>Shutting Down...</span>`;
+            }
+        }
+        // Case 3: Server has sent WoL
+        else if (detailedStatus && detailedStatus.status === 'wol_sent') {
+            if (isPingable) {
+                // WoL was successful, client is booting up. Awaiting its 'online' report.
+                statusHtml = `<span class="status-online"><i class="fas fa-spinner fa-spin me-1"></i>Booting...</span>`;
+            } else {
+                statusHtml = `<span class="badge bg-info"><i class="fas fa-magic me-1"></i>WoL sent</span>`;
+            }
+        }
+        // Case 4: Client is reachable but not reporting via script
+        else if (isPingable && (!detailedStatus || minutesSinceUpdate > 2.5)) {
+             statusHtml = `
+                <span class="status-offline" title="The host is online, but the UPS_monitor agent is not reporting.">
+                    <i class="fas fa-tools me-1"></i>
+                    Online (No Agent)
+                </span>`;
+        }
+        // Case 5: Default state - Awaiting any information
+        else {
+            statusHtml = `<span class="text-muted"><i class="fas fa-clock me-1"></i>Awaiting status...</span>`;
         }
 
         if (statusCell) statusCell.innerHTML = statusHtml;
         
-        // Mobile view needs a slightly different structure
+        // Mobile view logic
         if (statusCellMobile) {
-            const isOnline = detailedStatus && detailedStatus.status === 'online' && minutesSinceUpdate <= 2.5;
-            const indicatorClass = isOnline ? 'online' : 'offline'; // Simplified for indicator dot
+            const isOnline = (detailedStatus && detailedStatus.status === 'online' && isPingable && minutesSinceUpdate <= 2.5);
+            const indicatorClass = isOnline ? 'online' : 'offline';
             statusCellMobile.innerHTML = `<span class="status-indicator ${indicatorClass}"></span> ${statusHtml}`;
         }
     }
