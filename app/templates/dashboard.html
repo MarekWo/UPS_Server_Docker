@@ -407,12 +407,12 @@ function updateClientStatusUI(clientStatuses) {
 
         const detailedStatus = clientStatuses[client.ip];
         let statusHtml = '';
+        let minutesSinceUpdate = 0;
 
         if (detailedStatus) {
             const timestamp = new Date(detailedStatus.timestamp);
             const now = new Date();
-            // Check how many minutes have passed since the last update
-            const minutesSinceUpdate = (now - timestamp) / (1000 * 60);
+            minutesSinceUpdate = (now - timestamp) / (1000 * 60);
 
             // Handle various statuses provided by the client/server
             switch (detailedStatus.status) {
@@ -432,6 +432,25 @@ function updateClientStatusUI(clientStatuses) {
                     `;
                     break;
 
+                case 'shutting_down':
+                    // If the 'shutting_down' status is older than 3 minutes, assume the host is offline.
+                    if (minutesSinceUpdate > 3) {
+                        statusHtml = `
+                            <span class="status-offline">
+                                <i class="fas fa-times-circle me-1"></i>
+                                Offline
+                            </span>
+                        `;
+                    } else {
+                        statusHtml = `
+                            <span class="badge bg-danger">
+                                <i class="fas fa-power-off me-1"></i>
+                                Shutting Down...
+                            </span>
+                        `;
+                    }
+                    break;
+
                 case 'wol_sent':
                     statusHtml = `
                         <span class="badge bg-info">
@@ -442,7 +461,7 @@ function updateClientStatusUI(clientStatuses) {
                     break;
                 
                 case 'online':
-                    // If the last update is too old, consider the client offline
+                    // If the last update is too old, consider the client status stale.
                     if (minutesSinceUpdate > 2.5) {
                         statusHtml = `
                             <span class="status-offline">
