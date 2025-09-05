@@ -19,3 +19,4 @@ logs/
 *.drawio
 *.docx
 *.odt
+mods/*

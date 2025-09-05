@@ -425,6 +425,16 @@ function updateClientStatusUI(clientStatuses) {
             if (statusCell) statusCell.innerHTML = countdownHtml;
             if (statusCellMobile) statusCellMobile.innerHTML = countdownHtml;
 
+        } else if (detailedStatus && detailedStatus.status === 'wol_sent') {
+            const wolSentHtml = `
+                <span class="badge bg-info">
+                    <i class="fas fa-magic me-1"></i>
+                    WoL sent
+                </span>
+            `;
+            if (statusCell) statusCell.innerHTML = wolSentHtml;
+            if (statusCellMobile) statusCellMobile.innerHTML = wolSentHtml;
+            
         } else {            
             const isOnline = currentWakeHostStatus[section]; 
             

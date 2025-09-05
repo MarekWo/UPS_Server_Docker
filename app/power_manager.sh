@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Power Manager for Dummy NUT Server (v1.0.4)
+# Power Manager for Dummy NUT Server (v1.0.5)
 #
 # Author: Marek Wojtaszek (Enhancements by Gemini)
 # GitHub: https://github.com/MarekWo/
@@ -17,6 +17,8 @@
 # and added support for per-host broadcast IPs and descriptive names.
 # v1.0.4 Change: Fixed config parsing to handle values with spaces correctly,
 # both with and without quotes.
+# v1.0.5 Change: Setting "WoL sent" status for displaying on dashboard Web UI
+#
 #
 ################################################################################
 
@@ -118,6 +120,28 @@ get_wake_host_sections() {
     compgen -v | grep "^WAKE_HOST_[0-9]\+_NAME$" | sed 's/_NAME$//' | sort -V
 }
 
+# === FUNCTION TO UPDATE CLIENT STATUS JSON ===
+update_client_status() {
+    local ip_address="$1"
+    local new_status="$2"
+    local status_file="/var/run/nut/client_status.json"
+    local temp_file=$(mktemp)
+
+    # Create the status file if it doesn't exist
+    if [ ! -f "$status_file" ]; then
+        echo "{}" > "$status_file"
+    fi
+
+    # Use jq to safely update the JSON file
+    jq --arg ip "$ip_address" --arg status "$new_status" \
+       '.[$ip] = {
+           "status": $status,
+           "remaining_seconds": null,
+           "shutdown_delay": null,
+           "timestamp": (now | todate)
+       }' "$status_file" > "$temp_file" && mv "$temp_file" "$status_file"
+}
+
 # === SCRIPT START ===
 log "info" "--- Power check initiated ---"
 
@@ -214,6 +238,8 @@ else
                     if ! $PING_CMD -c 1 -W 1 "$ip" &> /dev/null; then
                         log "info" "Server '$name' ($ip) is offline. Sending WoL packet to $mac via $broadcast_ip."
                         $WAKEONLAN_CMD -i "$broadcast_ip" "$mac"
+                        # Set the status to 'wol_sent' after sending the packet
+                        update_client_status "$ip" "wol_sent"
                     else
                         log "info" "Server '$name' ($ip) is already online."
                     fi
