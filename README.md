@@ -107,6 +107,8 @@ The logic is simple but effective:
           * `SENTINEL_HOSTS`: A space-separated list of IPs for your sentinel devices.
           * `WOL_DELAY_MINUTES`: The time in minutes to wait after power is restored before sending WoL packets.
           * `UPS_STATE_FILE`: The path to the state file used by the `dummy-ups` driver. **This must match the `port` setting in NUT configuration**.
+          * `API_TOKEN`: **(Required)** The secret token used to authenticate client requests. This value must match the token used by your `UPS_monitor` clients.
+           * `DEFAULT_BROADCAST_IP`: The default broadcast address for Wake-on-LAN packets.
           * `DEFAULT_BROADCAST_IP`: The default broadcast address for Wake-on-LAN packets.
           * `[WAKE_HOST_X]`: Sections defining each server to wake up. Each section requires:
             - `NAME`: Descriptive name for the host
@@ -147,6 +149,9 @@ SENTINEL_HOSTS=192.168.1.11 192.168.1.12 192.168.1.13 192.168.1.14
 
 # Time to wait after power restoration before sending WoL packets
 WOL_DELAY_MINUTES=5
+
+# Secret token for API authentication (must match client configuration)
+API_TOKEN="your_super_secret_api_token"
 
 # Path to the dummy-ups driver's state file
 UPS_STATE_FILE=/var/run/nut/virtual.device
@@ -279,7 +284,7 @@ For detailed Web GUI documentation, see [WEB_GUI_README.md](WEB_GUI_README.md).
 
 ### API Endpoints
 
-The server provides a REST API for client configuration and status monitoring. All endpoints require an `Authorization` header with a bearer token. You must change the hardcoded token in `app/api.py` for a production environment.
+The server provides a REST API for client configuration and status monitoring. All endpoints require an `Authorization` header with a bearer token. The API token is now configured in `config/power_manager.conf`.
 
 **Example Request:**
 

@@ -15,6 +15,10 @@ UPS_STATE_FILE="/var/run/nut/virtual.device"
 # Default broadcast address for WoL packets if not specified per host
 DEFAULT_BROADCAST_IP="192.168.1.255"
 
+# The secret token for API authentication.
+# This MUST match the API_TOKEN used by UPS_monitor clients.
+API_TOKEN="your_super_secret_api_token"
+
 # === WAKE-ON-LAN HOST DEFINITIONS ===
 # Define each host that should be awakened after power restoration
 # Each host should have its own section with the following parameters:

@@ -16,9 +16,6 @@ from datetime import datetime
 from flask import Flask, jsonify, request, abort
 
 # --- Configuration ---
-# The single, hardcoded token for all clients.
-# IMPORTANT: Change this to a long, random string in your actual deployment.
-API_TOKEN = "ggJVLx8MtcZvs84DVrSxzsiJPb5VoR4EMGUu"
 UPSC_CMD = "/usr/bin/upsc"
 POWER_MANAGER_CONFIG = "/etc/nut/power_manager.conf"
 UPS_CONF_FILE = "/etc/nut/ups.conf"
@@ -191,6 +188,30 @@ def get_ups_name():
     except (FileNotFoundError, ValueError) as e:
         app.logger.error(f"Could not read UPS name: {e}")
         abort(500, description=str(e))
+
+def load_api_token():
+    """
+    Loads the API_TOKEN from power_manager.conf with a fallback for backward compatibility.
+    """
+    main_config, _ = read_power_manager_config()
+    token = main_config.get('API_TOKEN')
+
+    if token:
+        app.logger.info("Successfully loaded API_TOKEN from power_manager.conf.")
+        return token
+    else:
+        # Fallback for backward compatibility
+        fallback_token = "ggJVLx8MtcZvs84DVrSxzsiJPb5VoR4EMGUu"
+        warning_msg = (
+            "WARNING: 'API_TOKEN' not found in power_manager.conf. "
+            "Using a hardcoded, insecure fallback token. "
+            "Please define API_TOKEN in your configuration file for better security."
+        )
+        app.logger.warning(warning_msg)
+        return fallback_token
+
+# Load the API token once when the application starts
+API_TOKEN = load_api_token()
 
 # --- API Endpoints ---
 
