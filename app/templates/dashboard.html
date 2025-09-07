@@ -3,8 +3,15 @@
 {% block title %}Dashboard - UPS Power Management Server{% endblock %}
 
 {% block content %}
+{% if pm_config.get('POWER_SIMULATION_MODE') == 'true' %}
+<div class="alert alert-danger text-center" role="alert">
+    <h4 class="alert-heading"><i class="fas fa-exclamation-triangle me-2"></i>Power Outage Simulation is Active</h4>
+    <p>The system is currently forcing an "On Battery, Low Battery" status. All UPS clients will initiate shutdown procedures. This mode is for testing purposes.</p>
+    <hr>
+    <p class="mb-0">To disable, go to the <a href="{{ url_for('config') }}" class="alert-link">Configuration page</a> and uncheck "Enable Power Outage Simulation".</p>
+</div>
+{% endif %}
 <div class="row">
-    <!-- System Overview -->
     <div class="col-12 mb-4">
         <div class="card">
             <div class="card-header">
@@ -55,7 +62,6 @@
 </div>
 
 <div class="row">
-    <!-- Sentinel Hosts Status -->
     <div class="col-lg-4 mb-4">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
@@ -101,7 +107,6 @@
         </div>
     </div>
 
-    <!-- UPS Clients Status -->
     <div class="col-lg-8 mb-4">
         <div class="card">
             <div class="card-header">
@@ -109,7 +114,6 @@
             </div>
             <div class="card-body">
                 {% if ups_clients %}
-                    <!-- Desktop Table -->
                     <div class="table-responsive mobile-responsive d-none d-md-block">
                         <table class="table table-sm mobile-table">
                             <thead>
@@ -160,7 +164,6 @@
                         </table>
                     </div>
 
-                    <!-- Mobile Cards -->
                     <div class="mobile-cards d-block d-md-none">
                         {% for section, client in ups_clients.items() %}
                         <div class="mobile-card">
@@ -205,7 +208,6 @@
     </div>
 </div>
 
-<!-- Additional Wake Hosts (without UPS client functionality) -->
 {% set non_ups_hosts = [] %}
 {% for section, host in wake_hosts.items() %}
     {% if 'SHUTDOWN_DELAY_MINUTES' not in host %}
@@ -254,7 +256,6 @@
                     </table>
                 </div>
 
-                <!-- Mobile Cards -->
                 <div class="mobile-cards d-block d-md-none">
                     {% for section, host in non_ups_hosts %}
                     <div class="mobile-card">

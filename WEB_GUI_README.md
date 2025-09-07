@@ -26,6 +26,7 @@ The Web GUI for UPS Server provides easy management of system configuration thro
 - **Data Validation**: Automatic validation of IP addresses and MAC addresses with error feedback
 - **Auto-formatting**: Intelligent MAC address formatting during input
 - **Unified Configuration**: Single interface for all host parameters including optional UPS client settings
+- **Power Outage Simulation**: A dedicated switch to manually enable or disable a simulated power outage, allowing for easy testing of the entire shutdown and recovery workflow.
 
 ![Configuration](/images/web-ui-config.png)
 
@@ -92,7 +93,7 @@ After the update, the container will provide the following services:
 
 All system configuration is now managed through a single file: `power_manager.conf`. This file contains:
 
-  - **Main Settings**: Sentinel hosts, WoL delay, broadcast addresses
+  - **Main Settings**: Sentinel hosts, WoL delay, broadcast addresses, and the power outage simulation toggle.
   - **Host Definitions**: Each `[WAKE_HOST_X]` section can include:
       - `NAME`: Descriptive name
       - `IP`: Host IP address

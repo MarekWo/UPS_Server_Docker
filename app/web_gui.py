@@ -238,6 +238,7 @@ def save_main_config():
         pm_config['WOL_DELAY_MINUTES'] = request.form.get('wol_delay_minutes', '5')
         pm_config['DEFAULT_BROADCAST_IP'] = request.form.get('default_broadcast_ip', '192.168.1.255')
         pm_config['UPS_STATE_FILE'] = request.form.get('ups_state_file', '/var/run/nut/virtual.device')
+        pm_config['POWER_SIMULATION_MODE'] = 'true' if 'power_simulation_mode' in request.form else 'false'
         
         # Validate IPs in sentinel hosts
         sentinel_ips = pm_config['SENTINEL_HOSTS'].split()

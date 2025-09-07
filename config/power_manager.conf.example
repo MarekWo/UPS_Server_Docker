@@ -19,6 +19,12 @@ DEFAULT_BROADCAST_IP="192.168.1.255"
 # This MUST match the API_TOKEN used by UPS_monitor clients.
 API_TOKEN="your_super_secret_api_token"
 
+# Enable Power Outage Simulation mode.
+# When set to "true", this will force the UPS status to "OB LB" regardless
+# of the sentinel hosts' status. Useful for testing shutdown procedures.
+# Valid values: "true" or "false".
+POWER_SIMULATION_MODE="false"
+
 # === WAKE-ON-LAN HOST DEFINITIONS ===
 # Define each host that should be awakened after power restoration
 # Each host should have its own section with the following parameters:

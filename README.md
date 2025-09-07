@@ -38,6 +38,7 @@ The logic is simple but effective:
   * **Modern Web GUI:** Intuitive web interface for configuration and monitoring, optimized for both desktop and mobile devices.
   * **Centralized Management API:** A lightweight REST API serves client configurations (`/config`), live UPS status (`/upsc`), and receives client status updates (`/status`), centralizing all interactions.
   * **Live Client Shutdown Monitoring:** The dashboard displays a real-time countdown for each client that is preparing for shutdown, providing a clear overview of the system's state during a power outage.
+  * **Power Outage Simulation:** Manually trigger a simulated power failure from the web interface to test client shutdown procedures without physically disconnecting power.
   * **Standard-Compliant:** Controls a standard NUT server, making it compatible with any NUT client (Linux, Windows, Synology DSM, etc.).
   * **Automated Recovery:** Includes a delayed Wake-on-LAN function to automatically restart servers after stable power has returned.
   * **Unified Configuration:** Single configuration file (`power_manager.conf`) manages all aspects of the system.
@@ -152,6 +153,12 @@ WOL_DELAY_MINUTES=5
 
 # Secret token for API authentication (must match client configuration)
 API_TOKEN="your_super_secret_api_token"
+
+# Enable Power Outage Simulation mode.
+# When set to "true", this will force the UPS status to "OB LB" regardless
+# of the sentinel hosts' status. Useful for testing shutdown procedures.
+# Valid values: "true" or "false".
+POWER_SIMULATION_MODE="false"
 
 # Path to the dummy-ups driver's state file
 UPS_STATE_FILE=/var/run/nut/virtual.device

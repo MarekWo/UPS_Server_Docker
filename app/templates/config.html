@@ -9,7 +9,6 @@
     </div>
 </div>
 
-<!-- Main Configuration -->
 <div class="config-section">
     <h4 class="section-title"><i class="fas fa-sliders-h me-2"></i>Main Configuration</h4>
     <form method="POST" action="{{ url_for('save_main_config') }}">
@@ -37,13 +36,21 @@
                 <div class="form-text">Path to the virtual UPS device state file (read-only).</div>
             </div>
         </div>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="power_simulation_mode" name="power_simulation_mode" value="true" {% if pm_config.get('POWER_SIMULATION_MODE') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="power_simulation_mode">Enable Power Outage Simulation</label>
+                </div>
+                <div class="form-text">Forces the UPS status to "On Battery, Low Battery" to test client shutdown procedures.</div>
+            </div>
+        </div>
         <button type="submit" class="btn btn-primary">
             <i class="fas fa-save me-1"></i>Save Main Configuration
         </button>
     </form>
 </div>
 
-<!-- Wake Hosts Configuration -->
 <div class="config-section">
     <h4 class="section-title">
         <i class="fas fa-server me-2"></i>Managed Hosts
@@ -53,7 +60,6 @@
     </h4>
     
     {% if wake_hosts %}
-        <!-- Desktop Table -->
         <div class="table-responsive d-none d-lg-block">
             <table class="table table-hover mobile-table">
                 <thead>
@@ -96,7 +102,6 @@
             </table>
         </div>
 
-        <!-- Mobile Cards -->
         <div class="mobile-cards d-block d-lg-none">
             {% for section, host in wake_hosts.items() %}
             <div class="mobile-card">
@@ -148,7 +153,6 @@
     {% endif %}
 </div>
 
-<!-- Add Wake Host Modal -->
 <div class="modal fade" id="addWakeHostModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -193,7 +197,6 @@
     </div>
 </div>
 
-<!-- Edit Wake Host Modal -->
 <div class="modal fade" id="editWakeHostModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">

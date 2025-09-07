@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Power Manager for Dummy NUT Server (v1.0.5)
+# Power Manager for Dummy NUT Server (v1.0.6)
 #
 # Author: Marek Wojtaszek (Enhancements by Gemini)
 # GitHub: https://github.com/MarekWo/
@@ -18,7 +18,7 @@
 # v1.0.4 Change: Fixed config parsing to handle values with spaces correctly,
 # both with and without quotes.
 # v1.0.5 Change: Setting "WoL sent" status for displaying on dashboard Web UI
-#
+# v1.0.6 Change: Added Power Outage Simulation mode
 #
 ################################################################################
 
@@ -30,6 +30,7 @@ STATE_FILE="/var/run/nut/power_manager.state" # Stores the power state across ru
 # Absolute paths to commands for cron compatibility
 PING_CMD="/bin/ping"
 WAKEONLAN_CMD="/usr/bin/wakeonlan"
+UPS_STATE_FILE="/var/run/nut/virtual.device" # Default value, can be overridden by config
 
 # === LOGGING FUNCTION (DUAL LOGGING TO FILE AND SYSLOG) ===
 log() {
@@ -156,6 +157,17 @@ parse_main_config "$CONFIG_FILE"
 
 # Parse wake host sections
 parse_wake_hosts "$CONFIG_FILE"
+
+# Check for Power Outage Simulation Mode
+if [[ "${POWER_SIMULATION_MODE}" == "true" ]]; then
+    log "warn" "POWER OUTAGE SIMULATION MODE is active. Forcing 'OB LB' status."
+    echo "ups.status: OB LB" > "$UPS_STATE_FILE"
+    # Create state file to signify a power failure event is in progress
+    echo "STATE=POWER_FAIL" > "$STATE_FILE"
+    echo "TIMESTAMP=$(date +%s)" >> "$STATE_FILE"
+    log "info" "--- Power check finished (Simulation Mode) ---"
+    exit 0
+fi
 
 # Debug: Log the parsed SENTINEL_HOSTS value
 log "info" "Parsed SENTINEL_HOSTS: '$SENTINEL_HOSTS'"
