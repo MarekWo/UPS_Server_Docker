@@ -52,3 +52,40 @@ IP=192.168.1.15
 MAC=00:11:32:aa:bb:cc
 BROADCAST_IP=192.168.1.255
 SHUTDOWN_DELAY_MINUTES=15
+
+# === POWER OUTAGE SIMULATION SCHEDULES ===
+#
+# Each schedule must have its own section [SCHEDULE_X]
+#
+# Parameters:
+# NAME - A descriptive name for the schedule.
+# TYPE - "one-time" or "recurring".
+# DATE - (for one-time) The date in YYYY-MM-DD format.
+# DAY_OF_WEEK - (for recurring) The day: "monday", "tuesday", ..., "sunday", or "everyday".
+# TIME - The time in HH:MM format (24-hour).
+# ACTION - "start" or "stop" the simulation.
+# ENABLED - "true" or "false". One-time schedules are automatically disabled after running.
+
+# [SCHEDULE_1]
+# NAME="Weekly Test Shutdown"
+# TYPE="recurring"
+# DAY_OF_WEEK="friday"
+# TIME="23:00"
+# ACTION="start"
+# ENABLED="true"
+
+# [SCHEDULE_2]
+# NAME="Weekly Test Power On"
+# TYPE="recurring"
+# DAY_OF_WEEK="saturday"
+# TIME="01:00"
+# ACTION="stop"
+# ENABLED="true"
+
+# [SCHEDULE_3]
+# NAME="One-time Maintenance"
+# TYPE="one-time"
+# DATE="2025-12-24"
+# TIME="22:00"
+# ACTION="start"
+# ENABLED="true"

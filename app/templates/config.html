@@ -58,7 +58,7 @@
             <i class="fas fa-plus"></i> Add Host
         </button>
     </h4>
-    
+
     {% if wake_hosts %}
         <div class="table-responsive d-none d-lg-block">
             <table class="table table-hover mobile-table">
@@ -153,6 +153,79 @@
     {% endif %}
 </div>
 
+<div class="config-section">
+    <h4 class="section-title">
+        <i class="fas fa-calendar-alt me-2"></i>Power Outage Simulation Scheduler
+        <button type="button" class="btn btn-success btn-sm float-end" data-bs-toggle="modal" data-bs-target="#addScheduleModal">
+            <i class="fas fa-plus"></i> Add Schedule
+        </button>
+    </h4>
+    {% if schedules %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Day/Date</th>
+                        <th>Time</th>
+                        <th>Action</th>
+                        <th>Enabled</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for section, schedule in schedules.items() %}
+                    <tr>
+                        <td><strong>{{ schedule.get('NAME', section) }}</strong></td>
+                        <td>{{ schedule.get('TYPE', 'One-time') | capitalize }}</td>
+                        <td>
+                            {% if schedule.get('TYPE') == 'recurring' %}
+                                {{ schedule.get('DAY_OF_WEEK') | capitalize }}
+                            {% else %}
+                                {{ schedule.get('DATE') }}
+                            {% endif %}
+                        </td>
+                        <td><code>{{ schedule.get('TIME') }}</code></td>
+                        <td>
+                            {% if schedule.get('ACTION') == 'start' %}
+                                <span class="badge bg-danger">Start Simulation</span>
+                            {% else %}
+                                <span class="badge bg-success">Stop Simulation</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if schedule.get('ENABLED') == 'true' %}
+                                <span class="badge bg-success">Yes</span>
+                            {% else %}
+                                <span class="badge bg-secondary">No</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editSchedule('{{ section }}')" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <form method="POST" action="{{ url_for('delete_schedule', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete schedule {{ schedule.get('NAME', section) }}?')">
+                                <button type="submit" class="btn btn-danger btn-sm" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="fas fa-calendar-times fa-3x mb-3"></i>
+            <h5>No schedules configured</h5>
+            <p>Add schedules to automatically start or stop the power outage simulation.</p>
+        </div>
+    {% endif %}
+</div>
+
+
 <div class="modal fade" id="addWakeHostModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -236,10 +309,83 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="scheduleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="scheduleForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="scheduleModalTitle">Add New Schedule</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="edit_section" name="section">
+                    <div class="mb-3">
+                        <label for="schedule_name" class="form-label">Schedule Name</label>
+                        <input type="text" class="form-control" id="schedule_name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="schedule_type" class="form-label">Type</label>
+                        <select class="form-select" id="schedule_type" name="type">
+                            <option value="one-time">One-time</option>
+                            <option value="recurring">Recurring</option>
+                        </select>
+                    </div>
+                    <div id="one-time-fields">
+                        <div class="mb-3">
+                            <label for="schedule_date" class="form-label">Date</label>
+                            <input type="date" class="form-control" id="schedule_date" name="date">
+                        </div>
+                    </div>
+                    <div id="recurring-fields" style="display: none;">
+                        <div class="mb-3">
+                            <label for="schedule_day" class="form-label">Day of the Week</label>
+                            <select class="form-select" id="schedule_day" name="day_of_week">
+                                <option value="monday">Monday</option>
+                                <option value="tuesday">Tuesday</option>
+                                <option value="wednesday">Wednesday</option>
+                                <option value="thursday">Thursday</option>
+                                <option value="friday">Friday</option>
+                                <option value="saturday">Saturday</option>
+                                <option value="sunday">Sunday</option>
+                                <option value="everyday">Everyday</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="schedule_time" class="form-label">Time</label>
+                        <input type="time" class="form-control" id="schedule_time" name="time" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Action</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="action" id="action_start" value="start" checked>
+                            <label class="form-check-label" for="action_start">Start Simulation</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="action" id="action_stop" value="stop">
+                            <label class="form-check-label" for="action_stop">Stop Simulation</label>
+                        </div>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="schedule_enabled" name="enabled" value="true" checked>
+                        <label class="form-check-label" for="schedule_enabled">Enabled</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success" id="saveScheduleBtn">Add Schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
+// Scripts for Wake Host Management
 function editWakeHost(section, name, ip, mac, broadcastIp, shutdownDelay) {
     document.getElementById('edit_name').value = name;
     document.getElementById('edit_ip').value = ip;
@@ -250,22 +396,20 @@ function editWakeHost(section, name, ip, mac, broadcastIp, shutdownDelay) {
     new bootstrap.Modal(document.getElementById('editWakeHostModal')).show();
 }
 
-// Validate MAC address format
 document.getElementById('add_mac').addEventListener('input', function(e) {
     let value = e.target.value.replace(/[^0-9A-Fa-f]/g, '');
-    let formattedValue = value.match(/.{1,2}/g)?.join(':') || value;
+    let formattedValue = value.match(/.{1,2}/g)?.join(':') || '';
     if (formattedValue.length > 17) formattedValue = formattedValue.substring(0, 17);
-    e.target.value = formattedValue;
+    e.target.value = formattedValue.toUpperCase();
 });
 
 document.getElementById('edit_mac').addEventListener('input', function(e) {
     let value = e.target.value.replace(/[^0-9A-Fa-f]/g, '');
-    let formattedValue = value.match(/.{1,2}/g)?.join(':') || value;
+    let formattedValue = value.match(/.{1,2}/g)?.join(':') || '';
     if (formattedValue.length > 17) formattedValue = formattedValue.substring(0, 17);
-    e.target.value = formattedValue;
+    e.target.value = formattedValue.toUpperCase();
 });
 
-// Auto-format IP addresses
 function formatIP(input) {
     input.addEventListener('input', function(e) {
         let value = e.target.value.replace(/[^0-9.]/g, '');
@@ -286,12 +430,11 @@ formatIP(document.getElementById('add_broadcast_ip'));
 formatIP(document.getElementById('edit_ip'));
 formatIP(document.getElementById('edit_broadcast_ip'));
 
-// Form validation
 document.addEventListener('DOMContentLoaded', function() {
     const forms = document.querySelectorAll('form');
     forms.forEach(form => {
         form.addEventListener('submit', function(e) {
-            const ipInputs = form.querySelectorAll('input[type="text"][name$="ip"], input[name="ip"]');
+            const ipInputs = form.querySelectorAll('input[name*="ip"]');
             ipInputs.forEach(input => {
                 if (input.value && !isValidIP(input.value)) {
                     e.preventDefault();
@@ -302,7 +445,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     input.classList.remove('is-invalid');
                 }
             });
-            
             const macInputs = form.querySelectorAll('input[name="mac"]');
             macInputs.forEach(input => {
                 if (input.value && !isValidMAC(input.value)) {
@@ -324,11 +466,12 @@ function isValidIP(ip) {
 }
 
 function isValidMAC(mac) {
-    const regex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+    const regex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/i;
     return regex.test(mac);
 }
 
 function showError(message) {
+    const alertContainer = document.querySelector('.container');
     const alert = document.createElement('div');
     alert.className = 'alert alert-danger alert-dismissible fade show';
     alert.innerHTML = `
@@ -336,12 +479,83 @@ function showError(message) {
         ${message}
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
-    document.querySelector('.container').insertBefore(alert, document.querySelector('.container').firstChild);
-    
+    alertContainer.insertBefore(alert, alertContainer.firstChild);
     setTimeout(() => {
         const bsAlert = new bootstrap.Alert(alert);
         bsAlert.close();
     }, 5000);
 }
+
+// New scripts for Schedule Management
+const addScheduleModalBtn = document.querySelector('[data-bs-target="#addScheduleModal"]');
+if (addScheduleModalBtn) {
+    addScheduleModalBtn.addEventListener('click', () => {
+        const scheduleModal = new bootstrap.Modal(document.getElementById('scheduleModal'));
+        const scheduleForm = document.getElementById('scheduleForm');
+        scheduleForm.reset();
+        scheduleForm.action = "{{ url_for('add_schedule') }}";
+        document.getElementById('scheduleModalTitle').innerText = 'Add New Schedule';
+        const saveScheduleBtn = document.getElementById('saveScheduleBtn');
+        saveScheduleBtn.innerText = 'Add Schedule';
+        saveScheduleBtn.className = 'btn btn-success';
+        document.getElementById('schedule_type').dispatchEvent(new Event('change'));
+        scheduleModal.show();
+    });
+}
+
+
+const allSchedules = {{ schedules|tojson|safe }};
+
+function editSchedule(section) {
+    const schedule = allSchedules[section];
+    if (!schedule) return;
+    
+    const scheduleModal = new bootstrap.Modal(document.getElementById('scheduleModal'));
+    const scheduleForm = document.getElementById('scheduleForm');
+    scheduleForm.reset();
+    scheduleForm.action = `/edit_schedule/${section}`;
+    document.getElementById('scheduleModalTitle').innerText = 'Edit Schedule';
+    const saveScheduleBtn = document.getElementById('saveScheduleBtn');
+    saveScheduleBtn.innerText = 'Save Changes';
+    saveScheduleBtn.className = 'btn btn-warning';
+
+    document.getElementById('edit_section').value = section;
+    document.getElementById('schedule_name').value = schedule.NAME || '';
+    document.getElementById('schedule_type').value = schedule.TYPE || 'one-time';
+    
+    if (schedule.TYPE === 'recurring') {
+        document.getElementById('schedule_day').value = schedule.DAY_OF_WEEK || 'monday';
+    } else {
+        document.getElementById('schedule_date').value = schedule.DATE || '';
+    }
+    
+    document.getElementById('schedule_time').value = schedule.TIME || '';
+    
+    if (schedule.ACTION === 'stop') {
+        document.getElementById('action_stop').checked = true;
+    } else {
+        document.getElementById('action_start').checked = true;
+    }
+    
+    document.getElementById('schedule_enabled').checked = (schedule.ENABLED === 'true');
+
+    document.getElementById('schedule_type').dispatchEvent(new Event('change'));
+    scheduleModal.show();
+}
+
+document.getElementById('schedule_type').addEventListener('change', function() {
+    if (this.value === 'one-time') {
+        document.getElementById('one-time-fields').style.display = 'block';
+        document.getElementById('recurring-fields').style.display = 'none';
+        document.getElementById('schedule_date').required = true;
+        document.getElementById('schedule_day').required = false;
+    } else {
+        document.getElementById('one-time-fields').style.display = 'none';
+        document.getElementById('recurring-fields').style.display = 'block';
+        document.getElementById('schedule_date').required = false;
+        document.getElementById('schedule_day').required = true;
+    }
+});
+
 </script>
 {% endblock %}

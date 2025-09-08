@@ -2,23 +2,21 @@
 
 ################################################################################
 #
-# Power Manager for Dummy NUT Server (v1.0.6)
+# Power Manager for Dummy NUT Server (v1.1.2 - Scheduler Edition + Hotfix)
 #
 # Author: Marek Wojtaszek (Enhancements by Gemini)
 # GitHub: https://github.com/MarekWo/
 #
-# This script monitors a set of sentinel hosts to infer the status of mains
-# power. If all sentinel hosts become unreachable, it assumes a power failure
-# and updates the status of a virtual (dummy) NUT server.
+# This script monitors sentinel hosts or a schedule to determine power status
+# and updates a virtual (dummy) NUT server.
 #
-# v1.0.2 Change: Switched to sequential pinging to prevent race conditions
-# and ensure consistent logging, especially in containerized environments.
-# v1.0.3 Change: Enhanced configuration format for WAKE_HOSTS with sections
-# and added support for per-host broadcast IPs and descriptive names.
-# v1.0.4 Change: Fixed config parsing to handle values with spaces correctly,
-# both with and without quotes.
-# v1.0.5 Change: Setting "WoL sent" status for displaying on dashboard Web UI
-# v1.0.6 Change: Added Power Outage Simulation mode
+# v1.0.2 Change: Switched to sequential pinging.
+# v1.0.3 Change: Enhanced configuration for WAKE_HOSTS.
+# v1.0.4 Change: Fixed config parsing for values with spaces.
+# v1.0.5 Change: Added "WoL sent" status for Web UI.
+# v1.0.6 Change: Added manual Power Outage Simulation mode.
+# v1.1.0 Change: Added scheduler for Power Outage Simulation.
+# v1.1.2 Change: Fixed regex in get_sections function to correctly find schedules.
 #
 ################################################################################
 
@@ -26,11 +24,11 @@
 LOG_FILE="/var/log/power_manager.log"
 CONFIG_FILE="/etc/nut/power_manager.conf"
 STATE_FILE="/var/run/nut/power_manager.state" # Stores the power state across runs
+UPS_STATE_FILE_DEFAULT="/var/run/nut/virtual.device"
 
 # Absolute paths to commands for cron compatibility
 PING_CMD="/bin/ping"
 WAKEONLAN_CMD="/usr/bin/wakeonlan"
-UPS_STATE_FILE="/var/run/nut/virtual.device" # Default value, can be overridden by config
 
 # === LOGGING FUNCTION (DUAL LOGGING TO FILE AND SYSLOG) ===
 log() {
@@ -48,77 +46,51 @@ log() {
     logger -p "user.$level" -t "PowerManager" -- "$msg"
 }
 
-# === FUNCTION TO PARSE MAIN CONFIG VARIABLES ===
-parse_main_config() {
-    local config_file="$1"
-    
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip comments and empty lines
-        [[ "$line" =~ ^[[:space:]]*# || -z "$line" ]] && continue
-        
-        # Skip section headers
-        [[ "$line" =~ ^\[[[:space:]]*WAKE_HOST_[0-9]+[[:space:]]*\]$ ]] && continue
-        
-        # Parse key=value pairs for main config only
-        if [[ "$line" =~ ^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-            key="${BASH_REMATCH[1]}"
-            value="${BASH_REMATCH[2]}"
-            
-            # Remove surrounding quotes if present
-            if [[ "$value" =~ ^\"(.*)\"$ ]]; then
-                value="${BASH_REMATCH[1]}"
-            elif [[ "$value" =~ ^\'(.*)\'$ ]]; then
-                value="${BASH_REMATCH[1]}"
-            fi
-            
-            # Export the variable
-            declare -g "$key=$value"
-        fi
-    done < "$config_file"
-}
-
-# === FUNCTION TO PARSE WAKE HOSTS FROM CONFIG ===
-parse_wake_hosts() {
+# === FUNCTION TO PARSE THE ENTIRE CONFIG FILE ===
+parse_config() {
     local config_file="$1"
     local current_section=""
-    local wake_hosts_info=()
-    
-    # Use a more robust method to handle files without trailing newlines
+
     while IFS= read -r line || [[ -n "$line" ]]; do
+        # Trim leading/trailing whitespace
+        line=$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
         # Skip comments and empty lines
-        [[ "$line" =~ ^[[:space:]]*# || -z "$line" ]] && continue
-        
-        # Check for section headers [WAKE_HOST_X]
-        if [[ "$line" =~ ^\[WAKE_HOST_[0-9]+\]$ ]]; then
-            current_section=$(echo "$line" | tr -d '[]')
+        if [[ "$line" =~ ^# || -z "$line" ]]; then
             continue
         fi
-        
-        # Only process lines within WAKE_HOST sections
-        if [[ "$current_section" =~ ^WAKE_HOST_[0-9]+$ ]]; then
-            # Parse key=value pairs
-            if [[ "$line" =~ ^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-                key="${BASH_REMATCH[1]}"
-                value="${BASH_REMATCH[2]}"
-                
-                # Remove surrounding quotes if present
-                if [[ "$value" =~ ^\"(.*)\"$ ]]; then
-                    value="${BASH_REMATCH[1]}"
-                elif [[ "$value" =~ ^\'(.*)\'$ ]]; then
-                    value="${BASH_REMATCH[1]}"
-                fi
-                
-                # Store values with section prefix
+
+        # Check for section headers
+        if [[ "$line" =~ ^\[(.*)\]$ ]]; then
+            current_section="${BASH_REMATCH[1]}"
+            continue
+        fi
+
+        # Parse key=value pairs
+        if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
+            key=$(echo "${BASH_REMATCH[1]}" | sed 's/[[:space:]]*$//')
+            value=$(echo "${BASH_REMATCH[2]}" | sed 's/^[[:space:]]*//')
+
+            # Remove quotes from value
+            value="${value#\"}"; value="${value%\"}"
+            value="${value#\'}"; value="${value%\'}"
+            
+            if [[ -n "$current_section" ]]; then
+                # It's a section variable (WAKE_HOST_X or SCHEDULE_X)
                 declare -g "${current_section}_${key}=$value"
+            else
+                # It's a main config variable
+                declare -g "$key=$value"
             fi
         fi
     done < "$config_file"
 }
 
-# === FUNCTION TO GET ALL WAKE HOST SECTIONS ===
-get_wake_host_sections() {
-    # Find all WAKE_HOST section variables
-    compgen -v | grep "^WAKE_HOST_[0-9]\+_NAME$" | sed 's/_NAME$//' | sort -V
+# === FUNCTION TO GET ALL SECTIONS OF A GIVEN TYPE ===
+get_sections() {
+    local type_prefix="$1"
+    # Use grep with Extended Regular Expressions (-E) to correctly handle '+' for one or more digits.
+    compgen -v | grep -E "^${type_prefix}_[0-9]+_NAME$" | sed 's/_NAME$//' | sort -V
 }
 
 # === FUNCTION TO UPDATE CLIENT STATUS JSON ===
@@ -126,7 +98,14 @@ update_client_status() {
     local ip_address="$1"
     local new_status="$2"
     local status_file="/var/run/nut/client_status.json"
-    local temp_file=$(mktemp)
+    local temp_file
+    temp_file=$(mktemp)
+
+    if ! command -v jq &> /dev/null; then
+        # jq is installed in the Dockerfile, but this is a safeguard
+        log "warn" "jq command not found, cannot update client status file."
+        return
+    fi
 
     # Create the status file if it doesn't exist
     if [ ! -f "$status_file" ]; then
@@ -151,106 +130,143 @@ if [ ! -f "$CONFIG_FILE" ]; then
     log "err" "CRITICAL ERROR: Configuration file not found at $CONFIG_FILE. Exiting."
     exit 1
 fi
+parse_config "$CONFIG_FILE"
 
-# Parse the main configuration variables (non-section)
-parse_main_config "$CONFIG_FILE"
+# Use UPS_STATE_FILE from config, or default if not set
+UPS_STATE_FILE="${UPS_STATE_FILE:-$UPS_STATE_FILE_DEFAULT}"
 
-# Parse wake host sections
-parse_wake_hosts "$CONFIG_FILE"
+# --- SCHEDULE CHECK LOGIC ---
+NOW_HHMM=$(date +%H:%M)
+NOW_DOW_LC=$(date +%A | tr '[:upper:]' '[:lower:]')
+NOW_DATE=$(date +%Y-%m-%d)
+SCHEDULE_SIMULATION_ACTION=""
 
-# Check for Power Outage Simulation Mode
-if [[ "${POWER_SIMULATION_MODE}" == "true" ]]; then
-    log "warn" "POWER OUTAGE SIMULATION MODE is active. Forcing 'OB LB' status."
-    echo "ups.status: OB LB" > "$UPS_STATE_FILE"
-    # Create state file to signify a power failure event is in progress
-    echo "STATE=POWER_FAIL" > "$STATE_FILE"
-    echo "TIMESTAMP=$(date +%s)" >> "$STATE_FILE"
-    log "info" "--- Power check finished (Simulation Mode) ---"
-    exit 0
+# DEBUG: Log current time variables
+log "debug" "Current time check: HH:MM='$NOW_HHMM', DOW='$NOW_DOW_LC', DATE='$NOW_DATE'"
+
+# DEBUG: Check if schedule sections are found
+SCHEDULE_SECTIONS=$(get_sections "SCHEDULE")
+if [ -z "$SCHEDULE_SECTIONS" ]; then
+    log "debug" "No schedule sections found in config."
+else
+    log "debug" "Found schedule sections: $SCHEDULE_SECTIONS"
 fi
 
-# Debug: Log the parsed SENTINEL_HOSTS value
-log "info" "Parsed SENTINEL_HOSTS: '$SENTINEL_HOSTS'"
+for section in $SCHEDULE_SECTIONS; do
+    enabled_var="${section}_ENABLED"
+    type_var="${section}_TYPE"
+    time_var="${section}_TIME"
+    action_var="${section}_ACTION"
+    date_var="${section}_DATE"
+    dow_var="${section}_DAY_OF_WEEK"
+    name_var="${section}_NAME"
 
-# === CHECK SENTINEL HOSTS AVAILABILITY ===
-log "info" "Pinging sentinel hosts: $SENTINEL_HOSTS"
-LIVE_HOSTS_COUNT=0
+    # DEBUG: Log the values for the current schedule section being processed
+    log "debug" "Processing schedule [$section]: NAME='${!name_var}', ENABLED='${!enabled_var}', TYPE='${!type_var}', TIME='${!time_var}', ACTION='${!action_var}', DATE='${!date_var}', DOW='${!dow_var}'"
 
-# --- MODIFIED LOOP ---
-# Loop through each host sequentially and wait for the result.
-for IP in $SENTINEL_HOSTS; do
-    # The ping command now runs in the foreground. The script will pause
-    # here for up to 1 second waiting for a response.
-    if $PING_CMD -c 1 -W 1 "$IP" &> /dev/null; then
-        log "info" "  -> Sentinel host $IP is online."
-        LIVE_HOSTS_COUNT=$((LIVE_HOSTS_COUNT + 1))
-    else
-        log "info" "  -> Sentinel host $IP is offline."
+    # Skip if disabled or missing essential info
+    [[ "${!enabled_var}" != "true" || -z "${!type_var}" || -z "${!time_var}" ]] && continue
+
+    match=false
+    if [[ "${!type_var}" == "one-time" && "${!date_var}" == "$NOW_DATE" && "${!time_var}" == "$NOW_HHMM" ]]; then
+        match=true
+        log "debug" "Match found for one-time schedule '$section'"
+    elif [[ "${!type_var}" == "recurring" && ("${!dow_var}" == "$NOW_DOW_LC" || "${!dow_var}" == "everyday") && "${!time_var}" == "$NOW_HHMM" ]]; then
+        match=true
+        log "debug" "Match found for recurring schedule '$section'"
+    fi
+
+    if $match; then
+        log "info" "Schedule match: [${!name_var}] triggers action [${!action_var}]."
+        SCHEDULE_SIMULATION_ACTION="${!action_var}"
+        # If a one-time schedule matches, disable it to prevent re-triggering
+        if [[ "${!type_var}" == "one-time" ]]; then
+            log "info" "Disabling one-time schedule [${!name_var}] after execution."
+            sed -i "/^\[$section\]/,/^\s*\[/ s/^\(ENABLED\s*=\s*\).*/\1\"false\"/" "$CONFIG_FILE"
+        fi
+        break # Process first match only
     fi
 done
 
-log "info" "Found $LIVE_HOSTS_COUNT online sentinel hosts."
+# Apply scheduled action by modifying the config file
+if [[ "$SCHEDULE_SIMULATION_ACTION" == "start" ]]; then
+    log "warn" "Scheduled action: STARTING Power Outage Simulation."
+    sed -i 's/^\(POWER_SIMULATION_MODE\s*=\s*\).*/\1\"true\"/' "$CONFIG_FILE"
+    POWER_SIMULATION_MODE="true" # Update live variable for this run
+elif [[ "$SCHEDULE_SIMULATION_ACTION" == "stop" ]]; then
+    log "info" "Scheduled action: STOPPING Power Outage Simulation."
+    sed -i 's/^\(POWER_SIMULATION_MODE\s*=\s*\).*/\1\"false\"/' "$CONFIG_FILE"
+    POWER_SIMULATION_MODE="false" # Update live variable for this run
+fi
 
+# --- MAIN DECISION LOGIC ---
+LIVE_HOSTS_COUNT=0
+POWER_STATUS="ONLINE" # Assume power is online by default
+
+if [[ "${POWER_SIMULATION_MODE}" == "true" ]]; then
+    log "warn" "Power Outage Simulation is active. Forcing power status to OFFLINE."
+    POWER_STATUS="OFFLINE"
+else
+    log "info" "Pinging sentinel hosts: $SENTEL_HOSTS"
+    for IP in $SENTINEL_HOSTS; do
+        if $PING_CMD -c 1 -W 1 "$IP" &> /dev/null; then
+            log "info" "  -> Sentinel host $IP is online."
+            LIVE_HOSTS_COUNT=$((LIVE_HOSTS_COUNT + 1))
+        else
+            log "info" "  -> Sentinel host $IP is offline."
+        fi
+    done
+    log "info" "Found $LIVE_HOSTS_COUNT online sentinel hosts."
+    if [ "$LIVE_HOSTS_COUNT" -eq 0 ]; then
+        POWER_STATUS="OFFLINE"
+    fi
+fi
+
+# --- STATE UPDATE AND WoL LOGIC ---
 NOW_SECONDS=$(date +%s)
 
-# === MAIN DECISION LOGIC ===
-if [ "$LIVE_HOSTS_COUNT" -eq 0 ]; then
-    # --- POWER FAILURE DETECTED ---
-    log "warn" "Power failure detected! Setting UPS status to OB LB (On Battery, Low Battery)."
+if [ "$POWER_STATUS" == "OFFLINE" ]; then
+    log "warn" "Power failure detected! Setting UPS status to OB LB."
     echo "ups.status: OB LB" > "$UPS_STATE_FILE"
-
-    # Create state file to signify a power failure event is in progress
     echo "STATE=POWER_FAIL" > "$STATE_FILE"
     echo "TIMESTAMP=$NOW_SECONDS" >> "$STATE_FILE"
-
 else
-    # --- POWER IS ONLINE ---
-    log "info" "Power OK ($LIVE_HOSTS_COUNT hosts online). Setting UPS status to OL (Online)."
+    log "info" "Power is ONLINE. Setting UPS status to OL."
     echo "ups.status: OL" > "$UPS_STATE_FILE"
 
-    # Check state file to handle Wake-on-LAN logic after power restoration
     if [ -f "$STATE_FILE" ]; then
-        source "$STATE_FILE"
+        source "$STATE_FILE" # Load STATE and TIMESTAMP
 
         if [ "$STATE" == "POWER_FAIL" ]; then
-            # This is the first run after power has been restored
             log "info" "Power restoration detected. Starting $WOL_DELAY_MINUTES minute delay for Wake-on-LAN."
             echo "STATE=POWER_RESTORED" > "$STATE_FILE"
             echo "TIMESTAMP=$NOW_SECONDS" >> "$STATE_FILE"
-
         elif [ "$STATE" == "POWER_RESTORED" ]; then
-            # Power is restored, check if the delay has passed
             DELAY_SECONDS=$((WOL_DELAY_MINUTES * 60))
             TIME_ELAPSED=$((NOW_SECONDS - TIMESTAMP))
 
             if [ "$TIME_ELAPSED" -ge "$DELAY_SECONDS" ]; then
                 log "info" "WoL delay has passed. Initiating wake-up sequence for servers."
 
-                # Process each WAKE_HOST section
-                for section in $(get_wake_host_sections); do
-                    # Get variables for this section
+                for section in $(get_sections "WAKE_HOST"); do
                     name_var="${section}_NAME"
                     ip_var="${section}_IP"
                     mac_var="${section}_MAC"
                     broadcast_var="${section}_BROADCAST_IP"
                     
-                    # Get values (using indirect variable expansion)
                     name="${!name_var:-Unknown Host}"
                     ip="${!ip_var}"
                     mac="${!mac_var}"
                     broadcast_ip="${!broadcast_var:-$DEFAULT_BROADCAST_IP}"
                     
-                    # Skip if essential info is missing
                     if [[ -z "$ip" || -z "$mac" ]]; then
                         log "warn" "Skipping $name - missing IP or MAC address in configuration."
                         continue
                     fi
 
-                    # Check if the target server is offline before sending WoL packet
                     if ! $PING_CMD -c 1 -W 1 "$ip" &> /dev/null; then
                         log "info" "Server '$name' ($ip) is offline. Sending WoL packet to $mac via $broadcast_ip."
                         $WAKEONLAN_CMD -i "$broadcast_ip" "$mac"
-                        # Set the status to 'wol_sent' after sending the packet
                         update_client_status "$ip" "wol_sent"
                     else
                         log "info" "Server '$name' ($ip) is already online."

@@ -39,7 +39,8 @@ The logic is simple but effective:
   * **Centralized Management API:** A lightweight REST API serves client configurations (`/config`), live UPS status (`/upsc`), and receives client status updates (`/status`), centralizing all interactions.
   * **Live Client Shutdown Monitoring:** The dashboard displays a real-time countdown for each client that is preparing for shutdown, providing a clear overview of the system's state during a power outage.
   * **Power Outage Simulation:** Manually trigger a simulated power failure from the web interface to test client shutdown procedures without physically disconnecting power.
-  * **Standard-Compliant:** Controls a standard NUT server, making it compatible with any NUT client (Linux, Windows, Synology DSM, etc.).
+  * **Scheduled Power Outage Simulation:** Configure automatic start/stop times for the simulation mode for regular, hands-free testing.
+  * **Standard-Compliant:** Controls a standard NUT server, making it compatible with any NUT client (Linux, Windows, Synology DSM, etc.).  
   * **Automated Recovery:** Includes a delayed Wake-on-LAN function to automatically restart servers after stable power has returned.
   * **Unified Configuration:** Single configuration file (`power_manager.conf`) manages all aspects of the system.
   * **Robust Logging:** Includes built-in log rotation and optional, configurable forwarding to a central syslog server like Graylog.
@@ -146,7 +147,7 @@ Here's an example of the unified `power_manager.conf` file:
 # === CONFIGURATION FILE FOR POWER_MANAGER.SH ===
 
 # Sentinel hosts - devices on grid power (not UPS) for monitoring
-SENTINEL_HOSTS=192.168.1.11 192.168.1.12 192.168.1.13 192.168.1.14
+SENTINEL_HOSTS="192.168.1.11 192.168.1.12 192.168.1.13 192.168.1.14"
 
 # Time to wait after power restoration before sending WoL packets
 WOL_DELAY_MINUTES=5
@@ -188,6 +189,16 @@ SHUTDOWN_DELAY_MINUTES=15
 NAME=File Server
 IP=192.168.1.15
 MAC=00:11:32:aa:bb:cc
+
+# === POWER OUTAGE SIMULATION SCHEDULES ===
+
+# [SCHEDULE_1]
+# NAME="Weekly Test Shutdown"
+# TYPE="recurring"
+# DAY_OF_WEEK="friday"
+# TIME="23:00"
+# ACTION="start"
+# ENABLED="true"
 ```
 
 ## 🔌 Network Configuration for Wake-on-LAN (WoL)

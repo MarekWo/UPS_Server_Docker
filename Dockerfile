@@ -39,10 +39,6 @@ RUN mkdir -p /app/templates
 # Make the power manager script executable
 RUN chmod +x /app/power_manager.sh
 
-# --- Cron Job Setup ---
-COPY cron/power-manager-cron /etc/cron.d/
-RUN chmod 0644 /etc/cron.d/power-manager-cron
-
 # --- Logrotate Setup ---
 COPY logrotate/power-manager-logrotate /etc/logrotate.d/
 

@@ -27,6 +27,7 @@ The Web GUI for UPS Server provides easy management of system configuration thro
 - **Auto-formatting**: Intelligent MAC address formatting during input
 - **Unified Configuration**: Single interface for all host parameters including optional UPS client settings
 - **Power Outage Simulation**: A dedicated switch to manually enable or disable a simulated power outage, allowing for easy testing of the entire shutdown and recovery workflow.
+- **Scheduler Management:** Create, edit, and delete schedules to automate the start and stop of Power Outage Simulation.
 
 ![Configuration](/images/web-ui-config.png)
 
@@ -100,6 +101,7 @@ All system configuration is now managed through a single file: `power_manager.co
       - `MAC`: MAC address for Wake-on-LAN
       - `BROADCAST_IP`: Optional specific broadcast IP
       - `SHUTDOWN_DELAY_MINUTES`: Optional - makes host a UPS client
+  - **Schedule Definitions**: Each `[SCHEDULE_X]` section defines a one-time or recurring job to enable or disable the simulation mode.
 
 ### Example Configuration
 
@@ -257,5 +259,8 @@ The Web GUI provides these endpoints for management:
   - `GET /wol/<section>` - Send Wake-on-LAN signal
   - `GET /status` - Get current host ping status (JSON)
   - `GET /client_statuses` - Get detailed client statuses (JSON)
+  - `POST /add_schedule` - Add new schedule for power outage simulation
+  - `POST /edit_schedule/<section>` - Edit an existing schedule
+  - `POST /delete_schedule/<section>` - Delete a schedule
 
 All Web GUI endpoints are independent of the existing REST API on port 5000, which continues to work without changes for UPS clients.

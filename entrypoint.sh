@@ -20,7 +20,17 @@ upsd -u root
 echo "Starting rsyslog daemon..."
 rsyslogd
 
-# --- 3. Start Cron Service ---
+# --- 3. Setup and Start Cron Service (Universal Timezone Solution) ---
+echo "Setting up cron job with Timezone: ${TZ:-UTC}"
+
+# Dynamically create the cron file using the TZ variable from docker-compose
+# This ensures the cron job runs in the user-specified timezone
+echo "TZ=${TZ:-UTC}" > /etc/cron.d/power-manager-cron
+echo "* * * * * root /app/power_manager.sh >> /var/log/power_manager.log 2>&1" >> /etc/cron.d/power-manager-cron
+
+# Apply correct permissions to the cron file
+chmod 0644 /etc/cron.d/power-manager-cron
+
 echo "Starting cron daemon..."
 cron
 
