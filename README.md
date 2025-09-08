@@ -388,17 +388,38 @@ The container provides the following services:
 
 ### Updating
 
-To update the application to the latest version from GitHub:
+To update the application to the latest version from GitHub, follow these steps. This method is robust and will discard any accidental local changes, ensuring a clean update.
 
-1.  **Pull the latest changes:**
+1.  **Navigate to the application directory**
+
     ```bash
-    git pull
+    cd /opt/ups-server-docker
     ```
-2.  **Rebuild the image and restart the container:**
+
+    *Note: `sudo` is likely required for the following commands if you cloned the repository into a system directory like `/opt`.*
+
+2.  **Fetch the latest version from the repository**
+    This command downloads the latest updates from GitHub.
+
     ```bash
-    docker compose up --build -d
+    sudo git fetch origin
     ```
-    Docker Compose will intelligently rebuild only what's necessary and restart the container with the latest updates. Your local configuration files will be preserved.
+
+3.  **Reset your local files to match the latest version**
+    This command will discard any local changes (like modified permissions or accidental edits) and force your local copy to match the official version.
+
+    ```bash
+    sudo git reset --hard origin/main
+    ```
+
+4.  **Rebuild and restart the container**
+    This applies the updates and restarts the application.
+
+    ```bash
+    sudo docker compose up --build -d
+    ```
+
+    Docker Compose will intelligently rebuild only what's necessary and restart the container. Your configuration files in the `./config` directory will be preserved.
 
 -----
 
