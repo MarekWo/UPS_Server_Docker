@@ -423,7 +423,7 @@ To update the application to the latest version from GitHub, follow these steps.
 
 -----
 
-### Migration from Previous Versions
+### Migration from the Hub Edition (from before August 15th, 2025)
 
 If you're upgrading from a version that used separate `upshub.conf` configuration:
 
