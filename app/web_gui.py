@@ -171,6 +171,13 @@ def index():
         # Get UPS clients from wake hosts
         ups_clients = get_ups_clients_from_wake_hosts(wake_hosts)
         
+        # Calculate non-UPS hosts (hosts without SHUTDOWN_DELAY_MINUTES)
+        non_ups_hosts = {
+            section: host
+            for section, host in wake_hosts.items()
+            if 'SHUTDOWN_DELAY_MINUTES' not in host
+        }
+        
         # Get status information
         sentinel_hosts_raw = pm_config.get('SENTINEL_HOSTS', '').split()
         sentinel_hosts = []
@@ -203,6 +210,7 @@ def index():
                              pm_config=pm_config,
                              wake_hosts=wake_hosts,
                              ups_clients=ups_clients,
+                             non_ups_hosts=non_ups_hosts,
                              sentinel_hosts=sentinel_hosts,
                              sentinel_status=sentinel_status,
                              wake_host_status=wake_host_status,

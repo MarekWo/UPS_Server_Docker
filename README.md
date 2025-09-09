@@ -118,6 +118,7 @@ The logic is simple but effective:
             - `MAC`: MAC address for Wake-on-LAN
             - `BROADCAST_IP`: (optional) Specific broadcast IP for this host
             - `SHUTDOWN_DELAY_MINUTES`: (optional) Makes this host a UPS client with specified shutdown delay
+            - `AUTO_WOL`: (optional): When set to "false" the WoL packet will not be sent to this host automatically 
 
 4.  **Environment Configuration:**
     This file (`.env`) is used to pass crucial settings into the container, such as the host's IP address and your local timezone.
@@ -189,6 +190,7 @@ SHUTDOWN_DELAY_MINUTES=15
 NAME=File Server
 IP=192.168.1.15
 MAC=00:11:32:aa:bb:cc
+AUTO_WOL="false"
 
 # === POWER OUTAGE SIMULATION SCHEDULES ===
 
