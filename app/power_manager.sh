@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Power Manager for Dummy NUT Server (v1.1.2 - Scheduler Edition + Hotfix)
+# Power Manager for Dummy NUT Server (v1.2.0 - Selective WoL Edition)
 #
 # Author: Marek Wojtaszek (Enhancements by Gemini)
 # GitHub: https://github.com/MarekWo/
@@ -17,6 +17,7 @@
 # v1.0.6 Change: Added manual Power Outage Simulation mode.
 # v1.1.0 Change: Added scheduler for Power Outage Simulation.
 # v1.1.2 Change: Fixed regex in get_sections function to correctly find schedules.
+# v1.2.0 Change: Added selective auto WoL option per host (AUTO_WOL="false").
 #
 ################################################################################
 
@@ -207,7 +208,7 @@ if [[ "${POWER_SIMULATION_MODE}" == "true" ]]; then
     log "warn" "Power Outage Simulation is active. Forcing power status to OFFLINE."
     POWER_STATUS="OFFLINE"
 else
-    log "info" "Pinging sentinel hosts: $SENTEL_HOSTS"
+    log "info" "Pinging sentinel hosts: $SENTINEL_HOSTS"
     for IP in $SENTINEL_HOSTS; do
         if $PING_CMD -c 1 -W 1 "$IP" &> /dev/null; then
             log "info" "  -> Sentinel host $IP is online."
@@ -253,23 +254,31 @@ else
                     ip_var="${section}_IP"
                     mac_var="${section}_MAC"
                     broadcast_var="${section}_BROADCAST_IP"
+                    auto_wol_var="${section}_AUTO_WOL"
                     
                     name="${!name_var:-Unknown Host}"
                     ip="${!ip_var}"
                     mac="${!mac_var}"
                     broadcast_ip="${!broadcast_var:-$DEFAULT_BROADCAST_IP}"
+                    auto_wol_value="${!auto_wol_var}"
                     
                     if [[ -z "$ip" || -z "$mac" ]]; then
                         log "warn" "Skipping $name - missing IP or MAC address in configuration."
                         continue
                     fi
 
-                    if ! $PING_CMD -c 1 -W 1 "$ip" &> /dev/null; then
-                        log "info" "Server '$name' ($ip) is offline. Sending WoL packet to $mac via $broadcast_ip."
-                        $WAKEONLAN_CMD -i "$broadcast_ip" "$mac"
-                        update_client_status "$ip" "wol_sent"
+                    # Check if auto WoL is enabled for this host.
+                    # It's enabled if AUTO_WOL is "true" or not set at all (for backward compatibility).
+                    if [[ "$auto_wol_value" != "false" ]]; then
+                        if ! $PING_CMD -c 1 -W 1 "$ip" &> /dev/null; then
+                            log "info" "Server '$name' ($ip) is offline. Sending WoL packet to $mac via $broadcast_ip."
+                            $WAKEONLAN_CMD -i "$broadcast_ip" "$mac"
+                            update_client_status "$ip" "wol_sent"
+                        else
+                            log "info" "Server '$name' ($ip) is already online."
+                        fi
                     else
-                        log "info" "Server '$name' ($ip) is already online."
+                        log "info" "Skipping WoL for '$name' ($ip) as automatic startup is disabled in the configuration."
                     fi
                 done
 

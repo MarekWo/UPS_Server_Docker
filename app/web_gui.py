@@ -282,6 +282,7 @@ def add_wake_host():
         mac = request.form.get('mac', '').strip()
         broadcast_ip = request.form.get('broadcast_ip', '').strip()
         shutdown_delay = request.form.get('shutdown_delay', '').strip()
+        auto_wol = 'true' if 'auto_wol' in request.form else 'false'
         
         if not all([name, ip, mac]):
             flash('Name, IP, and MAC address are required', 'error')
@@ -297,7 +298,7 @@ def add_wake_host():
             return redirect(url_for('config'))
         
         # Add new wake host
-        wake_hosts[section_name] = {'NAME': name, 'IP': ip, 'MAC': mac}
+        wake_hosts[section_name] = {'NAME': name, 'IP': ip, 'MAC': mac, 'AUTO_WOL': auto_wol}
         if broadcast_ip:
             wake_hosts[section_name]['BROADCAST_IP'] = broadcast_ip
         if shutdown_delay:
@@ -327,6 +328,7 @@ def edit_wake_host(section):
         mac = request.form.get('mac', '').strip()
         broadcast_ip = request.form.get('broadcast_ip', '').strip()
         shutdown_delay = request.form.get('shutdown_delay', '').strip()
+        auto_wol = 'true' if 'auto_wol' in request.form else 'false'
 
         if not all([name, ip, mac]):
             flash('Name, IP, and MAC address are required.', 'error')
@@ -345,6 +347,7 @@ def edit_wake_host(section):
         wake_hosts[section]['NAME'] = name
         wake_hosts[section]['IP'] = ip
         wake_hosts[section]['MAC'] = mac
+        wake_hosts[section]['AUTO_WOL'] = auto_wol
         
         if broadcast_ip:
             wake_hosts[section]['BROADCAST_IP'] = broadcast_ip
