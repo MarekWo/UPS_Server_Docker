@@ -12,6 +12,10 @@ import sys
 import subprocess
 import ipaddress
 import json
+import smtplib
+import re
+from email.mime.text import MIMEText
+from email.utils import formataddr
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from werkzeug.exceptions import BadRequest
 
@@ -65,7 +69,8 @@ def read_power_manager_config():
                 elif current_section.startswith('SCHEDULE_'):
                     schedules[current_section] = {}
                 else:
-                    current_section = None # Reset if it's not a known section type
+                    # Reset if it's not a known section type, allowing for future sections
+                    current_section = None 
                 continue
             
             # Parse key=value pairs
@@ -92,10 +97,26 @@ def write_power_manager_config(config, wake_hosts, schedules):
     with open(POWER_MANAGER_CONFIG, 'w') as f:
         f.write("# === CONFIGURATION FILE FOR POWER_MANAGER.SH ===\n\n")
         
-        # Write main configuration
-        for key in sorted(config.keys()):
-            f.write(f"{key}=\"{config[key]}\"\n")
+        # Main config keys order
+        main_keys = [
+            'SENTINEL_HOSTS', 'WOL_DELAY_MINUTES', 'UPS_STATE_FILE', 
+            'DEFAULT_BROADCAST_IP', 'API_TOKEN', 'POWER_SIMULATION_MODE'
+        ]
         
+        # Write main configuration
+        for key in main_keys:
+            if key in config:
+                 f.write(f"{key}=\"{config[key]}\"\n")
+        
+        f.write("\n# === SMTP NOTIFICATIONS ===\n")
+        smtp_keys = [
+            'SMTP_SERVER', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD',
+            'SMTP_SENDER_NAME', 'SMTP_SENDER_EMAIL', 'SMTP_RECIPIENTS'
+        ]
+        for key in smtp_keys:
+            if key in config:
+                f.write(f"{key}=\"{config[key]}\"\n")
+
         f.write("\n# === WAKE-ON-LAN HOST DEFINITIONS ===\n")
         
         # Write wake hosts
@@ -133,6 +154,50 @@ def send_wol(mac, broadcast_ip):
     except:
         return False
 
+def send_email(subject, body, config):
+    """Send an email using configured SMTP settings."""
+    try:
+        # Extract SMTP configuration
+        smtp_server = config.get('SMTP_SERVER')
+        smtp_port_str = config.get('SMTP_PORT')
+        smtp_user = config.get('SMTP_USER')
+        smtp_password = config.get('SMTP_PASSWORD')
+        smtp_sender_name = config.get('SMTP_SENDER_NAME')
+        smtp_sender_email = config.get('SMTP_SENDER_EMAIL')
+        smtp_recipients_str = config.get('SMTP_RECIPIENTS')
+
+        if not all([smtp_server, smtp_port_str, smtp_sender_email, smtp_recipients_str]):
+            raise ValueError("SMTP server, port, sender email, and recipients must be configured.")
+
+        smtp_port = int(smtp_port_str)
+        smtp_recipients = [email.strip() for email in smtp_recipients_str.split(',') if email.strip()]
+
+        # Create message
+        msg = MIMEText(body, 'plain', 'utf-8')
+        msg['Subject'] = subject
+        msg['From'] = formataddr((smtp_sender_name, smtp_sender_email))
+        msg['To'] = ', '.join(smtp_recipients)
+
+        # Send email
+        server = None
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=10)
+        else:
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
+            if smtp_port != 26: # Don't use STARTTLS on port 26 for PMG
+                server.starttls()
+        
+        if smtp_user and smtp_password:
+            server.login(smtp_user, smtp_password)
+        
+        server.sendmail(smtp_sender_email, smtp_recipients, msg.as_string())
+        server.quit()
+        return True, "Email sent successfully."
+    except Exception as e:
+        app.logger.error(f"Failed to send email: {str(e)}")
+        return False, str(e)
+
+
 def validate_ip(ip):
     """Validate IP address"""
     try:
@@ -143,9 +208,21 @@ def validate_ip(ip):
 
 def validate_mac(mac):
     """Validate MAC address"""
-    import re
     mac_pattern = re.compile(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')
     return bool(mac_pattern.match(mac))
+
+def validate_email_list(emails_str):
+    """Validate a comma-separated list of emails."""
+    if not emails_str:
+        return True # Empty is considered valid.
+    
+    email_pattern = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+    emails = [email.strip() for email in emails_str.split(',')]
+    
+    for email in emails:
+        if email and not email_pattern.match(email):
+            return False
+    return True
 
 def get_ups_clients_from_wake_hosts(wake_hosts):
     """Extract UPS clients (hosts with SHUTDOWN_DELAY_MINUTES) from wake hosts"""
@@ -239,39 +316,77 @@ def config():
 
 @app.route('/save_main_config', methods=['POST'])
 def save_main_config():
-    """Save main power manager configuration"""
+    """Save main and SMTP power manager configuration"""
     try:
         pm_config, wake_hosts, schedules = read_power_manager_config()
         
-        # Update main config
+        # --- Update main config ---
         pm_config['SENTINEL_HOSTS'] = request.form.get('sentinel_hosts', '')
         pm_config['WOL_DELAY_MINUTES'] = request.form.get('wol_delay_minutes', '5')
         pm_config['DEFAULT_BROADCAST_IP'] = request.form.get('default_broadcast_ip', '192.168.1.255')
         pm_config['POWER_SIMULATION_MODE'] = 'true' if 'power_simulation_mode' in request.form else 'false'
-        # UPS_STATE_FILE is read-only in the form, but we ensure it's preserved
         if 'UPS_STATE_FILE' not in pm_config:
             pm_config['UPS_STATE_FILE'] = request.form.get('ups_state_file', '/var/run/nut/virtual.device')
 
+        # --- Update SMTP config ---
+        pm_config['SMTP_SERVER'] = request.form.get('smtp_server', '')
+        pm_config['SMTP_PORT'] = request.form.get('smtp_port', '')
+        pm_config['SMTP_USER'] = request.form.get('smtp_user', '')
+        pm_config['SMTP_PASSWORD'] = request.form.get('smtp_password', '')
+        pm_config['SMTP_SENDER_NAME'] = request.form.get('smtp_sender_name', '')
+        pm_config['SMTP_SENDER_EMAIL'] = request.form.get('smtp_sender_email', '')
+        pm_config['SMTP_RECIPIENTS'] = request.form.get('smtp_recipients', '')
 
-        # Validate IPs in sentinel hosts
+        # --- Validation ---
         sentinel_ips = pm_config['SENTINEL_HOSTS'].split()
         for ip in sentinel_ips:
             if ip and not validate_ip(ip):
-                flash(f'Invalid IP address: {ip}', 'error')
+                flash(f'Invalid IP address in Sentinel Hosts: {ip}', 'error')
                 return redirect(url_for('config'))
         
-        # Validate broadcast IP
         if not validate_ip(pm_config['DEFAULT_BROADCAST_IP']):
-            flash('Invalid default broadcast IP address', 'error')
+            flash('Invalid Default Broadcast IP address', 'error')
             return redirect(url_for('config'))
+
+        if pm_config.get('SMTP_RECIPIENTS') and not validate_email_list(pm_config['SMTP_RECIPIENTS']):
+             flash('Invalid email address format in Recipients field.', 'error')
+             return redirect(url_for('config'))
         
+        if pm_config.get('SMTP_SENDER_EMAIL') and not validate_email_list(pm_config['SMTP_SENDER_EMAIL']):
+             flash('Invalid email address format in Sender Email field.', 'error')
+             return redirect(url_for('config'))
+
+        # --- Write the combined configuration ---
         write_power_manager_config(pm_config, wake_hosts, schedules)
-        flash('Main configuration saved successfully!', 'success')
+        flash('Configuration saved successfully!', 'success')
         
     except Exception as e:
         flash(f'Error saving configuration: {str(e)}', 'error')
     
     return redirect(url_for('config'))
+
+
+@app.route('/test_smtp', methods=['POST'])
+def test_smtp():
+    """Send a test email."""
+    try:
+        pm_config, _, _ = read_power_manager_config()
+        
+        subject = "Test Email from UPS Power Management Server"
+        body = "This is a test email to verify your SMTP configuration is correct."
+        
+        success, message = send_email(subject, body, pm_config)
+        
+        if success:
+            flash(f'Test email sent successfully to {pm_config.get("SMTP_RECIPIENTS")}!', 'success')
+        else:
+            flash(f'Failed to send test email: {message}', 'error')
+            
+    except Exception as e:
+        flash(f'An unexpected error occurred: {str(e)}', 'error')
+        
+    return redirect(url_for('config'))
+
 
 @app.route('/add_wake_host', methods=['POST'])
 def add_wake_host():

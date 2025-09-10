@@ -9,9 +9,9 @@
     </div>
 </div>
 
-<div class="config-section">
-    <h4 class="section-title"><i class="fas fa-sliders-h me-2"></i>Main Configuration</h4>
-    <form method="POST" action="{{ url_for('save_main_config') }}">
+<form method="POST" action="{{ url_for('save_main_config') }}">
+    <div class="config-section">
+        <h4 class="section-title"><i class="fas fa-sliders-h me-2"></i>Main Configuration</h4>
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label for="sentinel_hosts" class="form-label">Sentinel Hosts (IP addresses separated by spaces)</label>
@@ -45,11 +45,63 @@
                 <div class="form-text">Forces the UPS status to "On Battery, Low Battery" to test client shutdown procedures.</div>
             </div>
         </div>
-        <button type="submit" class="btn btn-primary">
-            <i class="fas fa-save me-1"></i>Save Main Configuration
+    </div>
+
+    <div class="config-section">
+        <h4 class="section-title"><i class="fas fa-envelope me-2"></i>Email Notifications (SMTP)</h4>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label for="smtp_server" class="form-label">SMTP Server Address</label>
+                <input type="text" class="form-control" id="smtp_server" name="smtp_server" placeholder="smtp.example.com" value="{{ pm_config.get('SMTP_SERVER', '') }}">
+            </div>
+            <div class="col-md-6 mb-3">
+                <label for="smtp_port" class="form-label">SMTP Port</label>
+                <input type="number" class="form-control" id="smtp_port" name="smtp_port" placeholder="587" value="{{ pm_config.get('SMTP_PORT', '') }}">
+                <div class="form-text">Common ports: 25, 26, 465 (SSL), 587 (TLS).</div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label for="smtp_user" class="form-label">Username (optional)</label>
+                <input type="text" class="form-control" id="smtp_user" name="smtp_user" placeholder="user@example.com" value="{{ pm_config.get('SMTP_USER', '') }}">
+            </div>
+            <div class="col-md-6 mb-3">
+                <label for="smtp_password" class="form-label">Password (optional)</label>
+                <input type="password" class="form-control" id="smtp_password" name="smtp_password" value="{{ pm_config.get('SMTP_PASSWORD', '') }}">
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label for="smtp_sender_name" class="form-label">Sender Name</label>
+                <input type="text" class="form-control" id="smtp_sender_name" name="smtp_sender_name" placeholder="UPS Server" value="{{ pm_config.get('SMTP_SENDER_NAME', '') }}">
+            </div>
+            <div class="col-md-6 mb-3">
+                <label for="smtp_sender_email" class="form-label">Sender Email</label>
+                <input type="email" class="form-control" id="smtp_sender_email" name="smtp_sender_email" placeholder="ups@example.com" value="{{ pm_config.get('SMTP_SENDER_EMAIL', '') }}">
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-12 mb-3">
+                <label for="smtp_recipients" class="form-label">Recipients</label>
+                <input type="text" class="form-control" id="smtp_recipients" name="smtp_recipients" placeholder="admin1@example.com,admin2@example.com" value="{{ pm_config.get('SMTP_RECIPIENTS', '') }}">
+                <div class="form-text">Comma-separated list of email addresses.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-4">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="fas fa-save me-1"></i> Save Configuration
         </button>
-    </form>
+</form>
+
+<form method="POST" action="{{ url_for('test_smtp') }}" class="d-inline-block ms-2">
+    <button type="submit" class="btn btn-secondary btn-lg">
+        <i class="fas fa-paper-plane me-1"></i> Send Test Email
+    </button>
+</form>
 </div>
+
 
 <div class="config-section">
     <h4 class="section-title">
@@ -445,7 +497,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const forms = document.querySelectorAll('form');
     forms.forEach(form => {
         form.addEventListener('submit', function(e) {
-            const ipInputs = form.querySelectorAll('input[name*="ip"]');
+            const ipInputs = form.querySelectorAll('input[name="ip"], input[name="broadcast_ip"], input[name="default_broadcast_ip"]');
+            
             ipInputs.forEach(input => {
                 if (input.value && !isValidIP(input.value)) {
                     e.preventDefault();
@@ -456,6 +509,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     input.classList.remove('is-invalid');
                 }
             });
+
             const macInputs = form.querySelectorAll('input[name="mac"]');
             macInputs.forEach(input => {
                 if (input.value && !isValidMAC(input.value)) {

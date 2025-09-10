@@ -25,6 +25,14 @@ API_TOKEN="your_super_secret_api_token"
 # Valid values: "true" or "false".
 POWER_SIMULATION_MODE="false"
 
+# === SMTP NOTIFICATIONS ===
+# SMTP_SERVER="smtp.example.com"
+# SMTP_PORT="587"
+# SMTP_USER="user@example.com"
+# SMTP_PASSWORD="your_password"
+# SMTP_SENDER='"UPS Server" <ups@example.com>'
+# SMTP_RECIPIENTS="admin@example.com,support@example.com"
+
 # === WAKE-ON-LAN HOST DEFINITIONS ===
 # Define each host that should be awakened after power restoration
 # Each host should have its own section with the following parameters:
