@@ -44,6 +44,7 @@ The logic is simple but effective:
   * **Automated Recovery:** Includes a delayed Wake-on-LAN function to automatically restart servers after stable power has returned.
   * **Unified Configuration:** Single configuration file (`power_manager.conf`) manages all aspects of the system.
   * **Robust Logging:** Includes built-in log rotation and optional, configurable forwarding to a central syslog server like Graylog.
+  * **Email Notifications:** Receive real-time alerts for critical events like power outages, power restoration, client status changes, and application errors.
 
 -----
 
@@ -110,8 +111,23 @@ The logic is simple but effective:
           * `WOL_DELAY_MINUTES`: The time in minutes to wait after power is restored before sending WoL packets.
           * `UPS_STATE_FILE`: The path to the state file used by the `dummy-ups` driver. **This must match the `port` setting in NUT configuration**.
           * `API_TOKEN`: **(Required)** The secret token used to authenticate client requests. This value must match the token used by your `UPS_monitor` clients.
-           * `DEFAULT_BROADCAST_IP`: The default broadcast address for Wake-on-LAN packets.
           * `DEFAULT_BROADCAST_IP`: The default broadcast address for Wake-on-LAN packets.
+          * `SMTP Settings`:
+            - `SMTP_SERVER`
+            - `SMTP_PORT`
+            - `SMTP_USERNAME`
+            - `SMTP_PASSWORD`
+            - `SMTP_SENDER_NAME`
+            - `SMTP_SENDER_EMAIL`
+            - `SMTP_RECIPIENTS`
+          * `Notification Settings`:
+            - `NOTIFY_POWER_FAIL`
+            - `NOTIFY_POWER_FAIL`
+            - `NOTIFY_POWER_RESTORED`
+            - `NOTIFY_CLIENT_SHUTDOWN`
+            - `NOTIFY_CLIENT_STALE`
+            - `NOTIFY_APP_ERROR`
+            - `NOTIFY_SIMULATION_MODE`
           * `[WAKE_HOST_X]`: Sections defining each server to wake up. Each section requires:
             - `NAME`: Descriptive name for the host
             - `IP`: IP address of the host
@@ -167,6 +183,24 @@ UPS_STATE_FILE=/var/run/nut/virtual.device
 
 # Default broadcast address for WoL packets
 DEFAULT_BROADCAST_IP=192.168.1.255
+
+# === SMTP NOTIFICATIONS ===
+SMTP_SERVER="smtp.example.com"
+SMTP_PORT="587"
+SMTP_USER="user@example.com"
+SMTP_PASSWORD="your_password"
+SMTP_SENDER_NAME="UPS Server"
+SMTP_SENDER_EMAIL="ups@example.com"
+SMTP_RECIPIENTS="admin@example.com"
+
+# === NOTIFICATION SETTINGS ===
+# Enable or disable notifications for specific events. Valid values: "true" or "false".
+NOTIFY_POWER_FAIL="true"
+NOTIFY_POWER_RESTORED="true"
+NOTIFY_CLIENT_SHUTDOWN="false"
+NOTIFY_CLIENT_STALE="true"
+NOTIFY_APP_ERROR="true"
+NOTIFY_SIMULATION_MODE="true"
 
 # === WAKE-ON-LAN HOST DEFINITIONS ===
 

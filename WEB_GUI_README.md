@@ -28,6 +28,7 @@ The Web GUI for UPS Server provides easy management of system configuration thro
 - **Unified Configuration**: Single interface for all host parameters including optional UPS client settings
 - **Power Outage Simulation**: A dedicated switch to manually enable or disable a simulated power outage, allowing for easy testing of the entire shutdown and recovery workflow.
 - **Scheduler Management:** Create, edit, and delete schedules to automate the start and stop of Power Outage Simulation.
+- **Email Notification Management:** Configure SMTP server settings and select precisely which events (power failures, client status changes, errors) should trigger an email alert.
 
 ![Configuration](/images/web-ui-config.png)
 
@@ -104,6 +105,7 @@ All system configuration is now managed through a single file: `power_manager.co
       - `AUTO_WOL`: Optional - set to "false" to disable automatic WoL
 
   - **Schedule Definitions**: Each `[SCHEDULE_X]` section defines a one-time or recurring job to enable or disable the simulation mode.
+  - **Notification Settings**: Contains all parameters for the SMTP server and flags to enable or disable specific alerts (NOTIFY_POWER_FAIL, etc.).
 
 ### Example Configuration
 
@@ -114,6 +116,19 @@ SENTINEL_HOSTS=192.168.1.11 192.168.1.12 192.168.1.13
 WOL_DELAY_MINUTES=5
 DEFAULT_BROADCAST_IP=192.168.1.255
 UPS_STATE_FILE=/var/run/nut/virtual.device
+POWER_SIMULATION_MODE="false"
+
+# === SMTP NOTIFICATIONS ===
+SMTP_SERVER="smtp.example.com"
+SMTP_PORT="587"
+SMTP_SENDER_NAME="My UPS Alert"
+SMTP_SENDER_EMAIL="ups@example.com"
+SMTP_RECIPIENTS="admin@example.com"
+
+# === NOTIFICATION SETTINGS ===
+NOTIFY_POWER_FAIL="true"
+NOTIFY_POWER_RESTORED="true"
+NOTIFY_APP_ERROR="true"
 
 # === WAKE-ON-LAN HOST DEFINITIONS ===
 
@@ -264,5 +279,6 @@ The Web GUI provides these endpoints for management:
   - `POST /add_schedule` - Add new schedule for power outage simulation
   - `POST /edit_schedule/<section>` - Edit an existing schedule
   - `POST /delete_schedule/<section>` - Delete a schedule
+  - `POST /test_smtp` - Sends a test email using the saved SMTP configuration.
 
 All Web GUI endpoints are independent of the existing REST API on port 5000, which continues to work without changes for UPS clients.
