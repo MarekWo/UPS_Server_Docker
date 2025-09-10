@@ -88,6 +88,46 @@
             </div>
         </div>
     </div>
+    
+    <div class="config-section">
+        <h4 class="section-title"><i class="fas fa-bell me-2"></i>Notification Settings</h4>
+        <p class="text-muted">Select which events should trigger an email notification.</p>
+        <div class="row">
+            <div class="col-md-4">
+                <h5><i class="fas fa-bolt text-warning"></i> Power Events</h5>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="notify_power_fail" name="notify_power_fail" value="true" {% if pm_config.get('NOTIFY_POWER_FAIL') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="notify_power_fail">Power Outage Detected</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="notify_power_restored" name="notify_power_restored" value="true" {% if pm_config.get('NOTIFY_POWER_RESTORED') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="notify_power_restored">Power Restored</label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <h5><i class="fas fa-desktop text-primary"></i> UPS Client Events</h5>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="notify_client_shutdown" name="notify_client_shutdown" value="true" {% if pm_config.get('NOTIFY_CLIENT_SHUTDOWN') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="notify_client_shutdown">Client Initiates Shutdown</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="notify_client_stale" name="notify_client_stale" value="true" {% if pm_config.get('NOTIFY_CLIENT_STALE') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="notify_client_stale">Client Status becomes Stale</label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <h5><i class="fas fa-cogs text-info"></i> System Events</h5>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="notify_app_error" name="notify_app_error" value="true" {% if pm_config.get('NOTIFY_APP_ERROR') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="notify_app_error">Application Error</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="notify_simulation_mode" name="notify_simulation_mode" value="true" {% if pm_config.get('NOTIFY_SIMULATION_MODE') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="notify_simulation_mode">Simulation Mode Changed</label>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="mb-4">
         <button type="submit" class="btn btn-primary btn-lg">

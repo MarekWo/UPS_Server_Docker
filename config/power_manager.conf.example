@@ -33,6 +33,15 @@ POWER_SIMULATION_MODE="false"
 # SMTP_SENDER='"UPS Server" <ups@example.com>'
 # SMTP_RECIPIENTS="admin@example.com,support@example.com"
 
+# === NOTIFICATION SETTINGS ===
+# Enable or disable notifications for specific events. Valid values: "true" or "false".
+# NOTIFY_POWER_FAIL="true"
+# NOTIFY_POWER_RESTORED="true"
+# NOTIFY_CLIENT_SHUTDOWN="true"
+# NOTIFY_CLIENT_STALE="true"
+# NOTIFY_APP_ERROR="true"
+# NOTIFY_SIMULATION_MODE="true"
+
 # === WAKE-ON-LAN HOST DEFINITIONS ===
 # Define each host that should be awakened after power restoration
 # Each host should have its own section with the following parameters:

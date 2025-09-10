@@ -114,8 +114,18 @@ def write_power_manager_config(config, wake_hosts, schedules):
             'SMTP_SENDER_NAME', 'SMTP_SENDER_EMAIL', 'SMTP_RECIPIENTS'
         ]
         for key in smtp_keys:
+            if key in config and config[key]:
+                f.write(f"{key}=\"{config[key]}\"\n")
+
+        f.write("\n# === NOTIFICATION SETTINGS ===\n")
+        notify_keys = [
+            'NOTIFY_POWER_FAIL', 'NOTIFY_POWER_RESTORED', 'NOTIFY_CLIENT_SHUTDOWN',
+            'NOTIFY_CLIENT_STALE', 'NOTIFY_APP_ERROR', 'NOTIFY_SIMULATION_MODE'
+        ]
+        for key in notify_keys:
             if key in config:
                 f.write(f"{key}=\"{config[key]}\"\n")
+
 
         f.write("\n# === WAKE-ON-LAN HOST DEFINITIONS ===\n")
         
@@ -337,6 +347,16 @@ def save_main_config():
         pm_config['SMTP_SENDER_EMAIL'] = request.form.get('smtp_sender_email', '')
         pm_config['SMTP_RECIPIENTS'] = request.form.get('smtp_recipients', '')
 
+        # --- Update Notification settings ---
+        notify_keys = [
+            'notify_power_fail', 'notify_power_restored', 'notify_client_shutdown',
+            'notify_client_stale', 'notify_app_error', 'notify_simulation_mode'
+        ]
+        for key in notify_keys:
+            # Convert to uppercase for the config file
+            config_key = key.upper() 
+            pm_config[config_key] = 'true' if key in request.form else 'false'
+
         # --- Validation ---
         sentinel_ips = pm_config['SENTINEL_HOSTS'].split()
         for ip in sentinel_ips:
@@ -372,8 +392,9 @@ def test_smtp():
     try:
         pm_config, _, _ = read_power_manager_config()
         
-        subject = "Test Email from UPS Power Management Server"
-        body = "This is a test email to verify your SMTP configuration is correct."
+        subject = "[UPS] Test Email from UPS Power Management Server"
+        body = "This is a test email to verify that your SMTP configuration is correct.\n\n"
+        body += "If you received this, notifications are working."
         
         success, message = send_email(subject, body, pm_config)
         
