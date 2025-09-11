@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Power Manager for Dummy NUT Server (v1.3.1 - Enhanced Logging)
+# Power Manager for Dummy NUT Server (v1.3.2 - Fixed missing power outage simulation module)
 #
 # Author: Marek Wojtaszek (Enhancements by Gemini)
 # GitHub: https://github.com/MarekWo/
@@ -21,6 +21,7 @@
 # v1.2.0 Change: Added selective auto WoL option per host (AUTO_WOL="false").
 # v1.3.0 Change: Added comprehensive email notification system.
 # v1.3.1 Change: Improved error logging for email notifications.
+# v1.3.2 Fixed missing power outage simulation module.
 #
 ################################################################################
 
@@ -85,6 +86,35 @@ parse_config() {
 get_sections() {
     local type_prefix="$1"
     compgen -v | grep -E "^${type_prefix}_[0-9]+_NAME$" | sed 's/_NAME$//' | sort -V
+}
+
+# === FUNCTION TO UPDATE CLIENT STATUS JSON ===
+update_client_status() {
+    local ip_address="$1"
+    local new_status="$2"
+    local status_file="/var/run/nut/client_status.json"
+    local temp_file
+    temp_file=$(mktemp)
+
+    if ! command -v jq &> /dev/null; then
+        # jq is installed in the Dockerfile, but this is a safeguard
+        log "warn" "jq command not found, cannot update client status file."
+        return
+    fi
+
+    # Create the status file if it doesn't exist
+    if [ ! -f "$status_file" ]; then
+        echo "{}" > "$status_file"
+    fi
+
+    # Use jq to safely update the JSON file
+    jq --arg ip "$ip_address" --arg status "$new_status" \
+       '.[$ip] = {
+           "status": $status,
+           "remaining_seconds": null,
+           "shutdown_delay": null,
+           "timestamp": (now | todate)
+       }' "$status_file" > "$temp_file" && mv "$temp_file" "$status_file"
 }
 
 # === NOTIFICATION FUNCTION ===
@@ -154,6 +184,72 @@ if [ -f "$STATE_FILE" ]; then
     PREVIOUS_STATE="$STATE"
 fi
 
+# --- SCHEDULE CHECK LOGIC (PRZYWRÓCONA SEKCJA) ---
+NOW_HHMM=$(date +%H:%M)
+NOW_DOW_LC=$(date +%A | tr '[:upper:]' '[:lower:]')
+NOW_DATE=$(date +%Y-%m-%d)
+SCHEDULE_SIMULATION_ACTION=""
+
+# DEBUG: Log current time variables
+log "debug" "Current time check: HH:MM='$NOW_HHMM', DOW='$NOW_DOW_LC', DATE='$NOW_DATE'"
+
+# DEBUG: Check if schedule sections are found
+SCHEDULE_SECTIONS=$(get_sections "SCHEDULE")
+if [ -z "$SCHEDULE_SECTIONS" ]; then
+    log "debug" "No schedule sections found in config."
+else
+    log "debug" "Found schedule sections: $SCHEDULE_SECTIONS"
+fi
+
+for section in $SCHEDULE_SECTIONS; do
+    enabled_var="${section}_ENABLED"
+    type_var="${section}_TYPE"
+    time_var="${section}_TIME"
+    action_var="${section}_ACTION"
+    date_var="${section}_DATE"
+    dow_var="${section}_DAY_OF_WEEK"
+    name_var="${section}_NAME"
+
+    # DEBUG: Log the values for the current schedule section being processed
+    log "debug" "Processing schedule [$section]: NAME='${!name_var}', ENABLED='${!enabled_var}', TYPE='${!type_var}', TIME='${!time_var}', ACTION='${!action_var}', DATE='${!date_var}', DOW='${!dow_var}'"
+
+    # Skip if disabled or missing essential info
+    [[ "${!enabled_var}" != "true" || -z "${!type_var}" || -z "${!time_var}" ]] && continue
+
+    match=false
+    if [[ "${!type_var}" == "one-time" && "${!date_var}" == "$NOW_DATE" && "${!time_var}" == "$NOW_HHMM" ]]; then
+        match=true
+        log "debug" "Match found for one-time schedule '$section'"
+    elif [[ "${!type_var}" == "recurring" && ("${!dow_var}" == "$NOW_DOW_LC" || "${!dow_var}" == "everyday") && "${!time_var}" == "$NOW_HHMM" ]]; then
+        match=true
+        log "debug" "Match found for recurring schedule '$section'"
+    fi
+
+    if $match; then
+        log "info" "Schedule match: [${!name_var}] triggers action [${!action_var}]."
+        SCHEDULE_SIMULATION_ACTION="${!action_var}"
+        # If a one-time schedule matches, disable it to prevent re-triggering
+        if [[ "${!type_var}" == "one-time" ]]; then
+            log "info" "Disabling one-time schedule [${!name_var}] after execution."
+            sed -i "/^\[$section\]/,/^\s*\[/ s/^\(ENABLED\s*=\s*\).*/\1\"false\"/" "$CONFIG_FILE"
+        fi
+        break # Process first match only
+    fi
+done
+
+# Apply scheduled action by modifying the config file
+if [[ "$SCHEDULE_SIMULATION_ACTION" == "start" ]]; then
+    log "warn" "Scheduled action: STARTING Power Outage Simulation."
+    sed -i 's/^\(POWER_SIMULATION_MODE\s*=\s*\).*/\1\"true\"/' "$CONFIG_FILE"
+    POWER_SIMULATION_MODE="true" # Update live variable for this run
+    send_notification "SIMULATION_MODE" "[UPS] INFO: Power Outage Simulation Started" "The Power Outage Simulation has been started by schedule."
+elif [[ "$SCHEDULE_SIMULATION_ACTION" == "stop" ]]; then
+    log "info" "Scheduled action: STOPPING Power Outage Simulation."
+    sed -i 's/^\(POWER_SIMULATION_MODE\s*=\s*\).*/\1\"false\"/' "$CONFIG_FILE"
+    POWER_SIMULATION_MODE="false" # Update live variable for this run
+    send_notification "SIMULATION_MODE" "[UPS] INFO: Power Outage Simulation Stopped" "The Power Outage Simulation has been stopped by schedule."
+fi
+
 # --- MAIN DECISION LOGIC ---
 LIVE_HOSTS_COUNT=0
 POWER_STATUS="ONLINE"
@@ -162,7 +258,7 @@ if [[ "${POWER_SIMULATION_MODE}" == "true" ]]; then
     log "warn" "Power Outage Simulation is active. Forcing power status to OFFLINE."
     POWER_STATUS="OFFLINE"
 else
-    log "info" "Pinging sentinel hosts: $SENTEL_HOSTS"
+    log "info" "Pinging sentinel hosts: $SENTINEL_HOSTS"
     for IP in $SENTINEL_HOSTS; do
         if $PING_CMD -c 1 -W 1 "$IP" &> /dev/null; then
             log "info" "  -> Sentinel host $IP is online."
@@ -231,6 +327,7 @@ else # Power is ONLINE
                         if ! $PING_CMD -c 1 -W 1 "$ip" &> /dev/null; then
                             log "info" "Server '$name' ($ip) is offline. Sending WoL packet to $mac."
                             $WAKEONLAN_CMD -i "$broadcast_ip" "$mac"
+                            update_client_status "$ip" "wol_sent"
                             WOL_HOSTS_LIST+="- ${name} (${ip})\n"
                         fi
                     fi
