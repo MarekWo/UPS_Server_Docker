@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Power Manager for Dummy NUT Server (v1.3.4 - Fixed missing WoL signal)
+# Power Manager for Dummy NUT Server (v1.4.0 - Added Client Event Notifications)
 #
 # Author: Marek Wojtaszek (Enhancements by Gemini)
 # GitHub: https://github.com/MarekWo/
@@ -23,6 +23,7 @@
 # v1.3.1 Change: Improved error logging for email notifications.
 # v1.3.3 Fixed missing power outage simulation module.
 # v1.3.4 Fixed missing WoL signal when waking hosts.
+# v1.4.0 Change: Added notification handling for CLIENT_SHUTDOWN and CLIENT_STALE events.
 #
 ################################################################################
 
@@ -31,6 +32,9 @@ LOG_FILE="/var/log/power_manager.log"
 CONFIG_FILE="/etc/nut/power_manager.conf"
 STATE_FILE="/var/run/nut/power_manager.state" # Stores the power state across runs
 NOTIFICATION_STATE_FILE="/var/run/nut/notification.state" # Stores notification timestamps
+### MODIFIED ###
+CLIENT_STATUS_FILE="/var/run/nut/client_status.json" # Input for client status
+CLIENT_NOTIFICATION_STATE_FILE="/var/run/nut/client_notification.state" # Stores client notification states
 UPS_STATE_FILE_DEFAULT="/var/run/nut/virtual.device"
 EMAIL_SENDER_SCRIPT="/app/send_email.py"
 
@@ -38,9 +42,14 @@ EMAIL_SENDER_SCRIPT="/app/send_email.py"
 PING_CMD="/bin/ping"
 WAKEONLAN_CMD="/usr/bin/wakeonlan"
 PYTHON_CMD="/usr/local/bin/python"
+### NEW ###
+JQ_CMD="/usr/bin/jq"
 
 # Notification debounce time in seconds (1 hour)
 NOTIFICATION_DEBOUNCE_SECONDS=3600
+### NEW ###
+# Timeout in minutes for a client to be considered stale
+CLIENT_STALE_TIMEOUT_MINUTES=5
 
 # === LOGGING FUNCTION (DUAL LOGGING TO FILE AND SYSLOG) ===
 log() {
@@ -161,6 +170,96 @@ send_notification() {
     fi
 }
 
+### NEW ###
+# === FUNCTION TO CHECK CLIENT STATUSES AND SEND NOTIFICATIONS ===
+check_client_statuses() {
+    log "info" "Checking UPS client statuses for notifications..."
+
+    if [ ! -f "$CLIENT_STATUS_FILE" ]; then
+        log "info" "Client status file not found. Skipping client status check."
+        return
+    fi
+
+    if ! command -v $JQ_CMD &> /dev/null; then
+        log "warn" "jq command not found, cannot parse client statuses."
+        return
+    fi
+
+    # Create the client notification state file if it doesn't exist
+    touch "$CLIENT_NOTIFICATION_STATE_FILE"
+
+    local now_seconds
+    now_seconds=$(date +%s)
+    local stale_threshold_seconds=$((CLIENT_STALE_TIMEOUT_MINUTES * 60))
+
+    # Iterate over all configured hosts that are UPS clients
+    for section in $(get_sections "WAKE_HOST"); do
+        local is_ups_client_var="${section}_SHUTDOWN_DELAY_MINUTES"
+        local ip_var="${section}_IP"
+        local name_var="${section}_NAME"
+
+        # Process only if the host is a defined UPS client (has a shutdown delay)
+        if [[ -n "${!is_ups_client_var}" ]]; then
+            local client_ip="${!ip_var}"
+            local client_name="${!name_var:-$client_ip}"
+
+            if [[ -z "$client_ip" ]]; then
+                continue
+            fi
+
+            # Extract status and timestamp for the current client IP using jq
+            local client_data
+            client_data=$($JQ_CMD -r --arg ip "$client_ip" '.[$ip] | if . then "\(.status) \(.timestamp)" else "not_found" end' "$CLIENT_STATUS_FILE")
+
+            if [[ "$client_data" == "not_found" ]]; then
+                log "debug" "No status entry found for client '$client_name' ($client_ip)."
+                continue
+            fi
+
+            local client_status
+            local client_timestamp_str
+            read -r client_status client_timestamp_str <<< "$client_data"
+
+            local client_timestamp_seconds
+            client_timestamp_seconds=$(date -d "${client_timestamp_str}" +%s 2>/dev/null)
+
+            # --- 1. Check for Shutdown Initiation ---
+            local shutdown_notified_flag="SHUTDOWN_NOTIFIED_${client_ip//./_}"
+            local was_shutdown_notified
+            was_shutdown_notified=$(grep "^${shutdown_notified_flag}=true" "$CLIENT_NOTIFICATION_STATE_FILE")
+
+            if [[ "$client_status" == "shutdown_pending" && -z "$was_shutdown_notified" ]]; then
+                log "warn" "Client '$client_name' ($client_ip) has initiated shutdown. Sending notification."
+                send_notification "CLIENT_SHUTDOWN" "[UPS] ALERT: Client Initiating Shutdown" "The UPS client '${client_name}' (${client_ip}) has detected a power outage and is beginning its graceful shutdown procedure."
+                # Set flag to prevent re-notification during this outage
+                echo "${shutdown_notified_flag}=true" >> "$CLIENT_NOTIFICATION_STATE_FILE"
+            fi
+
+            # --- 2. Check for Stale Status ---
+            local stale_notified_flag="STALE_NOTIFIED_${client_ip//./_}"
+            local was_stale_notified
+            was_stale_notified=$(grep "^${stale_notified_flag}=true" "$CLIENT_NOTIFICATION_STATE_FILE")
+            local time_diff=$((now_seconds - client_timestamp_seconds))
+
+            if [[ $time_diff -gt $stale_threshold_seconds ]]; then
+                # Status is stale
+                if [[ -z "$was_stale_notified" ]]; then
+                    log "warn" "Client '$client_name' ($client_ip) status is stale (last update ${time_diff}s ago). Sending notification."
+                    send_notification "CLIENT_STALE" "[UPS] WARNING: Client Status is Stale" "The UPS client '${client_name}' (${client_ip}) has not reported its status for over ${CLIENT_STALE_TIMEOUT_MINUTES} minutes. It may be unresponsive or offline."
+                    echo "${stale_notified_flag}=true" >> "$CLIENT_NOTIFICATION_STATE_FILE"
+                fi
+            else
+                # Status is fresh again, clear the stale flag if it was set
+                if [[ -n "$was_stale_notified" ]]; then
+                    log "info" "Client '$client_name' ($client_ip) has recovered from stale status."
+                    sed -i "/^${stale_notified_flag}=true/d" "$CLIENT_NOTIFICATION_STATE_FILE"
+                fi
+            fi
+        fi
+    done
+}
+
+
 # === SCRIPT START ===
 log "info" "--- Power check initiated ---"
 
@@ -280,6 +379,12 @@ NOW_SECONDS=$(date +%s)
 if [ "$POWER_STATUS" == "OFFLINE" ]; then
     if [[ "$PREVIOUS_STATE" != "POWER_FAIL" ]]; then
         log "warn" "STATE CHANGE: Power failure detected! Setting UPS status to OB LB."
+        ### NEW ###
+        # Clear previous client notification states on a new power failure event
+        log "info" "New power failure detected. Clearing previous client notification states."
+        rm -f "$CLIENT_NOTIFICATION_STATE_FILE"
+        touch "$CLIENT_NOTIFICATION_STATE_FILE"
+        ### END NEW ###
         send_notification "POWER_FAIL" "[UPS] ALERT: Power Outage Detected" "All sentinel hosts are offline. The system is now running on UPS power. Client shutdown procedures will be initiated."
         echo "STATE=POWER_FAIL" > "$STATE_FILE"
         echo "TIMESTAMP=$NOW_SECONDS" >> "$STATE_FILE"
@@ -357,9 +462,20 @@ $WOL_HOSTS_LIST"
 
                 log "info" "Wake-on-LAN sequence complete. Clearing state file."
                 rm -f "$STATE_FILE"
+                ### NEW ###
+                # Clear client notification states after a full recovery cycle
+                log "info" "Power restored and WoL complete. Clearing client notification states."
+                rm -f "$CLIENT_NOTIFICATION_STATE_FILE"
+                touch "$CLIENT_NOTIFICATION_STATE_FILE"
+                ### END NEW ###
             fi
         fi
     fi
 fi
+
+### NEW ###
+# Check client statuses at the end of every run
+check_client_statuses
+### END NEW ###
 
 log "info" "--- Power check finished ---"
