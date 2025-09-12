@@ -337,7 +337,8 @@ else # Power is ONLINE
                             log "info" "Server '$name' ($ip) is offline. Sending WoL packet to $mac via $broadcast_ip."
                             $WAKEONLAN_CMD -i "$broadcast_ip" "$mac"
                             update_client_status "$ip" "wol_sent"
-                            WOL_HOSTS_LIST+="- ${name} (${ip})\n"
+                            WOL_HOSTS_LIST+="- ${name} (${ip})
+"
                         else
                             log "info" "Server '$name' ($ip) is already online."
                         fi
@@ -347,7 +348,11 @@ else # Power is ONLINE
                 done
                 
                 if [[ -n "$WOL_HOSTS_LIST" ]]; then
-                    send_notification "POWER_RESTORED" "[UPS] INFO: Wake-on-LAN Sequence Initiated" "The following hosts have been sent a Wake-on-LAN signal:\n\n$WOL_HOSTS_LIST"
+                    # Convert literal \n to actual newlines for proper email formatting
+                    WOL_EMAIL_BODY="The following hosts have been sent a Wake-on-LAN signal:
+
+$WOL_HOSTS_LIST"
+                    send_notification "POWER_RESTORED" "[UPS] INFO: Wake-on-LAN Sequence Initiated" "$WOL_EMAIL_BODY"
                 fi
 
                 log "info" "Wake-on-LAN sequence complete. Clearing state file."
