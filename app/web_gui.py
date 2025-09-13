@@ -99,8 +99,8 @@ def write_power_manager_config(config, wake_hosts, schedules):
         
         # Main config keys order
         main_keys = [
-            'SENTINEL_HOSTS', 'WOL_DELAY_MINUTES', 'UPS_STATE_FILE', 
-            'DEFAULT_BROADCAST_IP', 'API_TOKEN', 'POWER_SIMULATION_MODE'
+            'SENTINEL_HOSTS', 'WOL_DELAY_MINUTES', 'CLIENT_STALE_TIMEOUT_MINUTES', 
+            'UPS_STATE_FILE', 'DEFAULT_BROADCAST_IP', 'API_TOKEN', 'POWER_SIMULATION_MODE'
         ]
         
         # Write main configuration
@@ -333,6 +333,7 @@ def save_main_config():
         # --- Update main config ---
         pm_config['SENTINEL_HOSTS'] = request.form.get('sentinel_hosts', '')
         pm_config['WOL_DELAY_MINUTES'] = request.form.get('wol_delay_minutes', '5')
+        pm_config['CLIENT_STALE_TIMEOUT_MINUTES'] = request.form.get('client_stale_timeout_minutes', '5')
         pm_config['DEFAULT_BROADCAST_IP'] = request.form.get('default_broadcast_ip', '192.168.1.255')
         pm_config['POWER_SIMULATION_MODE'] = 'true' if 'power_simulation_mode' in request.form else 'false'
         if 'UPS_STATE_FILE' not in pm_config:

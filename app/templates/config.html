@@ -10,42 +10,47 @@
 </div>
 
 <form method="POST" action="{{ url_for('save_main_config') }}">
-    <div class="config-section">
-        <h4 class="section-title"><i class="fas fa-sliders-h me-2"></i>Main Configuration</h4>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label for="sentinel_hosts" class="form-label">Sentinel Hosts (IP addresses separated by spaces)</label>
-                <textarea class="form-control" id="sentinel_hosts" name="sentinel_hosts" rows="3" placeholder="192.168.1.11 192.168.1.12 192.168.1.13">{{ pm_config.get('SENTINEL_HOSTS', '') }}</textarea>
-                <div class="form-text">List of IP addresses of devices connected to grid power (not UPS) used to monitor power availability.</div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <label for="wol_delay_minutes" class="form-label">Wake-on-LAN Delay (minutes)</label>
-                <input type="number" class="form-control" id="wol_delay_minutes" name="wol_delay_minutes" min="1" max="60" value="{{ pm_config.get('WOL_DELAY_MINUTES', '5') }}">
-                <div class="form-text">Time to wait after power restoration before sending Wake-on-LAN signals.</div>
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label for="default_broadcast_ip" class="form-label">Default Broadcast Address</label>
-                <input type="text" class="form-control" id="default_broadcast_ip" name="default_broadcast_ip" placeholder="192.168.1.255" value="{{ pm_config.get('DEFAULT_BROADCAST_IP', '192.168.1.255') }}">
-                <div class="form-text">Broadcast address used for sending Wake-on-LAN packets.</div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <label for="ups_state_file" class="form-label">UPS State File</label>
-                <input type="text" class="form-control" id="ups_state_file" name="ups_state_file" value="{{ pm_config.get('UPS_STATE_FILE', '/var/run/nut/virtual.device') }}" readonly>
-                <div class="form-text">Path to the virtual UPS device state file (read-only).</div>
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="power_simulation_mode" name="power_simulation_mode" value="true" {% if pm_config.get('POWER_SIMULATION_MODE') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="power_simulation_mode">Enable Power Outage Simulation</label>
-                </div>
-                <div class="form-text">Forces the UPS status to "On Battery, Low Battery" to test client shutdown procedures.</div>
-            </div>
-        </div>
-    </div>
+	<div class="config-section">
+	   <h4 class="section-title"><i class="fas fa-sliders-h me-2"></i>Main Configuration</h4>
+	   <div class="row">
+		  <div class="col-md-6 mb-3">
+			 <label for="sentinel_hosts" class="form-label">Sentinel Hosts (IP addresses separated by spaces)</label>
+			 <textarea class="form-control" id="sentinel_hosts" name="sentinel_hosts" rows="3" placeholder="192.168.1.11 192.168.1.12 192.168.1.13">{{ pm_config.get('SENTINEL_HOSTS', '') }}</textarea>
+			 <div class="form-text">List of IP addresses of devices connected to grid power (not UPS) used to monitor power availability.</div>
+		  </div>
+		  <div class="col-md-6 mb-3">
+			 <label for="wol_delay_minutes" class="form-label">Wake-on-LAN Delay (minutes)</label>
+			 <input type="number" class="form-control" id="wol_delay_minutes" name="wol_delay_minutes" min="1" max="60" value="{{ pm_config.get('WOL_DELAY_MINUTES', '5') }}">
+			 <div class="form-text">Time to wait after power restoration before sending Wake-on-LAN signals.</div>
+		  </div>
+	   </div>
+	   <div class="row">
+		  <div class="col-md-6 mb-3">
+			 <label for="default_broadcast_ip" class="form-label">Default Broadcast Address</label>
+			 <input type="text" class="form-control" id="default_broadcast_ip" name="default_broadcast_ip" placeholder="192.168.1.255" value="{{ pm_config.get('DEFAULT_BROADCAST_IP', '192.168.1.255') }}">
+			 <div class="form-text">Broadcast address used for sending Wake-on-LAN packets.</div>
+		  </div>
+		  <div class="col-md-6 mb-3">
+			 <label for="client_stale_timeout_minutes" class="form-label">Client Stale Timeout (minutes)</label>
+			 <input type="number" class="form-control" id="client_stale_timeout_minutes" name="client_stale_timeout_minutes" min="1" max="60" value="{{ pm_config.get('CLIENT_STALE_TIMEOUT_MINUTES', '5') }}">
+			 <div class="form-text">Time after which a client is considered "stale" if it stops reporting its status.</div>
+		  </div>
+	   </div>
+	   <div class="row">
+		  <div class="col-md-6 mb-3">
+			 <label for="ups_state_file" class="form-label">UPS State File</label>
+			 <input type="text" class="form-control" id="ups_state_file" name="ups_state_file" value="{{ pm_config.get('UPS_STATE_FILE', '/var/run/nut/virtual.device') }}" readonly>
+			 <div class="form-text">Path to the virtual UPS device state file (read-only).</div>
+		  </div>
+		  <div class="col-md-6 mb-3 align-self-center">
+			 <div class="form-check form-switch">
+				<input class="form-check-input" type="checkbox" id="power_simulation_mode" name="power_simulation_mode" value="true" {% if pm_config.get('POWER_SIMULATION_MODE') == 'true' %}checked{% endif %}>
+				<label class="form-check-label" for="power_simulation_mode">Enable Power Outage Simulation</label>
+			 </div>
+			 <div class="form-text">Forces the UPS status to "On Battery, Low Battery" to test client shutdown procedures.</div>
+		  </div>
+	   </div>
+	</div>
 
     <div class="config-section">
         <h4 class="section-title"><i class="fas fa-envelope me-2"></i>Email Notifications (SMTP)</h4>

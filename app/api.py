@@ -353,10 +353,13 @@ def update_client_status():
     # Update status for the specific client
     statuses[client_ip] = client_status
     
-    # Write back to the file
+    # Write back to the file atomically
     try:
-        with open(CLIENT_STATUS_FILE, 'w') as f:
+        temp_file = CLIENT_STATUS_FILE + ".tmp"
+        with open(temp_file, 'w') as f:
             json.dump(statuses, f)
+        # Atomic move operation
+        os.rename(temp_file, CLIENT_STATUS_FILE)
     except IOError as e:
         app.logger.error(f"Could not write client status file: {e}")
         abort(500, description="Server error: Could not write status file.")

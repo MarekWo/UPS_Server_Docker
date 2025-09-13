@@ -9,6 +9,10 @@ SENTINEL_HOSTS="192.168.1.11 192.168.1.12 192.168.1.13 192.168.1.14"
 # This prevents waking servers during unstable power conditions (flickering).
 WOL_DELAY_MINUTES=5
 
+# The time in minutes after which a client is considered stale if it hasn't
+# reported its status.
+CLIENT_STALE_TIMEOUT_MINUTES="5"
+
 # The path to the dummy-ups driver's state file
 UPS_STATE_FILE="/var/run/nut/virtual.device"
 

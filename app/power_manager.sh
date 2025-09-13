@@ -2,7 +2,7 @@
 
 ################################################################################
 #
-# Power Manager for Dummy NUT Server (v1.4.0 - Added Client Event Notifications)
+# Power Manager for Dummy NUT Server (v1.4.1 - Stale Client Timeout from Config)
 #
 # Author: Marek Wojtaszek (Enhancements by Gemini)
 # GitHub: https://github.com/MarekWo/
@@ -24,6 +24,7 @@
 # v1.3.3 Fixed missing power outage simulation module.
 # v1.3.4 Fixed missing WoL signal when waking hosts.
 # v1.4.0 Change: Added notification handling for CLIENT_SHUTDOWN and CLIENT_STALE events.
+# v1.4.1 Change: Moved CLIENT_STALE_TIMEOUT_MINUTES to power_manager.conf
 #
 ################################################################################
 
@@ -49,7 +50,7 @@ JQ_CMD="/usr/bin/jq"
 NOTIFICATION_DEBOUNCE_SECONDS=3600
 ### NEW ###
 # Timeout in minutes for a client to be considered stale
-CLIENT_STALE_TIMEOUT_MINUTES=5
+# CLIENT_STALE_TIMEOUT_MINUTES=5 # Moved to config file
 
 # === LOGGING FUNCTION (DUAL LOGGING TO FILE AND SYSLOG) ===
 log() {
@@ -189,7 +190,7 @@ check_client_statuses() {
     touch "$CLIENT_NOTIFICATION_STATE_FILE"
 
     local now_seconds
-    now_seconds=$(date +%s)
+    now_seconds=$(date +%s)    
     local stale_threshold_seconds=$((CLIENT_STALE_TIMEOUT_MINUTES * 60))
 
     # Iterate over all configured hosts that are UPS clients
@@ -244,7 +245,7 @@ check_client_statuses() {
             if [[ $time_diff -gt $stale_threshold_seconds ]]; then
                 # Status is stale
                 if [[ -z "$was_stale_notified" ]]; then
-                    log "warn" "Client '$client_name' ($client_ip) status is stale (last update ${time_diff}s ago). Sending notification."
+                    log "warn" "Client '$client_name' ($client_ip) status is stale (last update ${time_diff}s ago). Sending notification."                    
                     send_notification "CLIENT_STALE" "[UPS] WARNING: Client Status is Stale" "The UPS client '${client_name}' (${client_ip}) has not reported its status for over ${CLIENT_STALE_TIMEOUT_MINUTES} minutes. It may be unresponsive or offline."
                     echo "${stale_notified_flag}=true" >> "$CLIENT_NOTIFICATION_STATE_FILE"
                 fi
@@ -273,6 +274,9 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 parse_config "$CONFIG_FILE"
+
+# Set defaults if not defined in config
+CLIENT_STALE_TIMEOUT_MINUTES="${CLIENT_STALE_TIMEOUT_MINUTES:-5}"
 
 # Use UPS_STATE_FILE from config, or default if not set
 UPS_STATE_FILE="${UPS_STATE_FILE:-$UPS_STATE_FILE_DEFAULT}"
