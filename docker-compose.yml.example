@@ -27,17 +27,15 @@ services:
       - UPS_SERVER_HOST_IP=${UPS_SERVER_HOST_IP}
     
     # ports:
+      # NOTE: The 'ports' section is ignored when 'network_mode: host' is used and can be removed. 
       # Map the container's ports to the host machine's ports.
-      # Format is "HOST:CONTAINER"
-
-      # - Expose the NUT server on port 3493.
-      # This needs to be disabled if you used the network_mode: host option.
+      # Format is "HOST:CONTAINER"      
+      
+      # - Expose the NUT server on port 3493.      
       # - "3493:3493"
-      # - Expose the UPS Hub API on port 5000.
-      # This needs to be disabled if you used the network_mode: host option.
+      # - Expose the UPS Hub API on port 5000.      
       # - "5000:5000"
-      # - Expose the Web GUI on port 80.
-      # This needs to be disabled if you used the network_mode: host option.
+      # - Expose the Web GUI on port 80.      
       # - "80:80"
       
     volumes:

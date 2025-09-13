@@ -2,10 +2,10 @@
 # This file should be placed in /etc/logrotate.d/
 
 /var/log/power_manager.log {
-    # Rotate the log file weekly.
+    # Rotate the log file daily.
     daily
 
-    # Keep 4 weeks of backlogs.
+    # Keep 7 days of backlogs.
     rotate 7
 
     # Create new log files after rotating old ones.

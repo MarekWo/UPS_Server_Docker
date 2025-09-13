@@ -486,6 +486,43 @@ If you're upgrading from a version that used separate `upshub.conf` configuratio
     ```
 
 -----
+### 🤝 Contributing
+
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+
+If you have a suggestion that would make this project better, please feel free to share it. The preferred way to do so is by starting a conversation in the **[Discussions](https://github.com/MarekWo/UPS_Server_Docker/discussions/categories/ideas)** section of the repository.
+
+If you would like to contribute with your code, please fork the repo and create a pull request.
+
+1.  Fork the Project
+2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4.  Push to the Branch (`git push origin feature/AmazingFeature`)
+5.  Open a Pull Request
+
+Thank you for helping make this tool better\!
+
+### 🐛 Reporting Issues and Suggesting Features
+
+Have you found a bug or have an idea for a new feature? I would love to hear from you\!
+
+To ensure that ideas are well-discussed and bugs are properly triaged, this project uses **GitHub Discussions** as the first step for all new reports.
+
+**How to submit an issue or idea:**
+
+1.  **Go to the [Discussions tab](https://github.com/MarekWo/UPS_Server_Docker/discussions/categories/ideas)** and open a new discussion in the "Ideas" category.
+2.  **Provide a clear title and a detailed description** of the issue or your suggestion. If you're reporting a bug, please include:
+      * Steps to reproduce the behavior.
+      * What you expected to happen.
+      * What actually happened (screenshots are welcome\!).
+      * Your environment details (e.g., Docker version, host OS).
+3.  **Engage in the discussion.** I will review your post and may ask follow-up questions.
+4.  **From Discussion to Issue.** If the report is confirmed as a bug or the feature is considered for implementation, I will create an official `Issue` directly from your discussion thread to track its progress.
+
+This process helps keep the official issue tracker clean and focused on actionable items. Thank you for your understanding and cooperation!
+
+
+-----
 
 ### License
 

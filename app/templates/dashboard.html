@@ -363,7 +363,7 @@ function updatePingStatusUI(statuses, prefix) {
             
             const autoWolDisabled = wakeHosts[key] && wakeHosts[key].AUTO_WOL === 'false';
             if (autoWolDisabled) {
-                statusTextHtml += ' <i class="fas fa-moon text-muted ms-2" title="Automatyczne wybudzanie (WoL) jest wyłączone"></i>';
+                statusTextHtml += ' <i class="fas fa-moon text-muted ms-2" title="Automatic Wake-on-LAN is disabled"></i>';
             }
 
             const indicatorElement = document.getElementById(elementId);
