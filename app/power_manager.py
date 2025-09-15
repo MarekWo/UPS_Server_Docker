@@ -370,7 +370,7 @@ class PowerManager:
                 break
 
     def _determine_power_status(self):
-        """Determine current power status with improved error handling."""
+        """Determine current power status with improved error handling - replicates original Bash logic."""
         if self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true':
             log.warning("Power Outage Simulation is active. Forcing OFFLINE.")
             return "OFFLINE"
@@ -380,20 +380,30 @@ class PowerManager:
             log.warning("No sentinel hosts configured, assuming power is ONLINE")
             return "ONLINE"
 
+        log.info(f"Pinging sentinel hosts: {' '.join(sentinel_hosts)}")
+        online_hosts_count = 0
+        
+        # Check ALL sentinel hosts (matching original Bash behavior)
         for ip in sentinel_hosts:
             try:
                 result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip], 
                                       capture_output=True, timeout=3)
                 if result.returncode == 0:
-                    log.info(f"Sentinel host {ip} is online. Power is ON.")
-                    return "ONLINE"
+                    log.info(f"  -> Sentinel host {ip} is online.")
+                    online_hosts_count += 1
                 else:
-                    log.debug(f"Sentinel host {ip} is offline.")
+                    log.info(f"  -> Sentinel host {ip} is offline.")
             except (subprocess.TimeoutExpired, OSError) as e:
-                log.warning(f"Failed to ping sentinel host {ip}: {e}")
+                log.warning(f"  -> Failed to ping sentinel host {ip}: {e}")
         
-        log.warning("All sentinel hosts are offline. Power is OFF.")
-        return "OFFLINE"
+        log.info(f"Found {online_hosts_count} online sentinel hosts.")
+        
+        if online_hosts_count == 0:
+            log.warning("All sentinel hosts are offline. Power is OFF.")
+            return "OFFLINE"
+        else:
+            log.info("At least one sentinel host is online. Power is ON.")
+            return "ONLINE"
 
     def _handle_power_offline(self):
         """Handle power offline state."""

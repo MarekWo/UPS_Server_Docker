@@ -57,6 +57,7 @@ The logic is simple but effective:
 │   ├── power_manager.py    # Core monitoring script
 │   ├── api.py              # REST API server
 │   ├── web_gui.py          # Web interface application
+│   ├── mail_send.py        # mail sending script
 │   └── templates/          # HTML templates for web GUI
 ├── config/                 # All user-editable configuration files
 │   └── power_manager.conf  # Main configuration file
@@ -121,8 +122,7 @@ The logic is simple but effective:
             - `SMTP_SENDER_EMAIL`
             - `SMTP_RECIPIENTS`
           * `Notification Settings`:
-            - `NOTIFY_POWER_FAIL`
-            - `NOTIFY_POWER_FAIL`
+            - `NOTIFY_POWER_FAIL`            
             - `NOTIFY_POWER_RESTORED`
             - `NOTIFY_CLIENT_SHUTDOWN`
             - `NOTIFY_CLIENT_STALE`
