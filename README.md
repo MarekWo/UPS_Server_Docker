@@ -19,7 +19,7 @@ This project is the perfect companion to the **[UPS_monitor](https://github.com/
 The logic is simple but effective:
 ![Dashboard](/images/workflow.png)
 
-1.  **Monitor:** A cron job inside the container runs a script (`power_manager.sh`) every minute to ping a list of user-defined sentinel hosts.
+1.  **Monitor:** A cron job inside the container runs a script (`power_manager.py`) every minute to ping a list of user-defined sentinel hosts.
 2.  **Decide:**
       * If **at least one** sentinel host is online, the script assumes grid power is OK and sets the virtual NUT server's status to `OL` (Online).
       * If **all** sentinel hosts are offline, the script assumes a power failure and sets the status to `OB LB` (On Battery, Low Battery).
@@ -27,7 +27,7 @@ The logic is simple but effective:
     * NUT clients (`UPS_monitor` scripts) periodically check the server's status. When they detect `OB LB`, they initiate a graceful shutdown countdown.
     * Clients are responsible for **actively reporting their status** (e.g., `online`, `shutdown_pending` with remaining time) back to the server's API on every check.
     * The Web GUI displays a live feed of these reported statuses. It can now show detailed states like `Online`, `Shutting down...`, `WoL sent`, or `Status Stale` if a client stops reporting.
-    * When power is restored, the `power_manager.sh` script waits a configurable delay and sends Wake-on-LAN (WoL) packets to offline clients. It also sets their status to `WoL sent` in the dashboard, providing clear feedback on the recovery process.
+    * When power is restored, the `power_manager.py` script waits a configurable delay and sends Wake-on-LAN (WoL) packets to offline clients. It also sets their status to `WoL sent` in the dashboard, providing clear feedback on the recovery process.
 
 -----
 
@@ -54,7 +54,7 @@ The logic is simple but effective:
 
 .
 ├── app/                    # Main application scripts
-│   ├── power_manager.sh    # Core monitoring script
+│   ├── power_manager.py    # Core monitoring script
 │   ├── api.py              # REST API server
 │   ├── web_gui.py          # Web interface application
 │   └── templates/          # HTML templates for web GUI
@@ -161,7 +161,7 @@ The logic is simple but effective:
 Here's an example of the unified `power_manager.conf` file:
 
 ```bash
-# === CONFIGURATION FILE FOR POWER_MANAGER.SH ===
+# === CONFIGURATION FILE FOR power_manager.py ===
 
 # Sentinel hosts - devices on grid power (not UPS) for monitoring
 SENTINEL_HOSTS="192.168.1.11 192.168.1.12 192.168.1.13 192.168.1.14"

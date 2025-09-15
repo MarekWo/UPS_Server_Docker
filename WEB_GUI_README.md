@@ -110,7 +110,7 @@ All system configuration is now managed through a single file: `power_manager.co
 ### Example Configuration
 
 ```bash
-# === CONFIGURATION FILE FOR POWER_MANAGER.SH ===
+# === CONFIGURATION FILE FOR POWER_MANAGER ===
 
 SENTINEL_HOSTS=192.168.1.11 192.168.1.12 192.168.1.13
 WOL_DELAY_MINUTES=5
