@@ -37,7 +37,7 @@ COPY app/ .
 RUN mkdir -p /app/templates
 
 # Make the power manager script executable
-RUN chmod +x /app/power_manager.sh
+RUN chmod +x /app/power_manager.py
 
 # --- Logrotate Setup ---
 COPY logrotate/power-manager-logrotate /etc/logrotate.d/
