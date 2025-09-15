@@ -4,11 +4,10 @@
 import os
 import sys
 import subprocess
-import configparser
 import json
 import logging
 import logging.handlers
-import re
+import fcntl
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
@@ -36,9 +35,12 @@ def setup_logging():
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', '%Y-%m-%d %H:%M:%S')
 
     # File handler for detailed logs
-    file_handler = logging.FileHandler(LOG_FILE)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    try:
+        file_handler = logging.FileHandler(LOG_FILE)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except IOError as e:
+        print(f"Warning: Cannot write to log file {LOG_FILE}: {e}", file=sys.stderr)
 
     # Syslog handler for system-wide integration
     try:
@@ -56,72 +58,114 @@ log = setup_logging()
 
 # --- Core Classes ---
 
-class ConfigManager:
-    """Handles reading and writing the power_manager.conf file."""
-    def __init__(self, filepath):
-        self.filepath = filepath
-        self.config = None
-        self.load()
+def read_power_manager_config():
+    """
+    Read and parse power_manager.conf file - EXACT REPLICA of web_gui.py function
+    to ensure 100% compatibility with existing Web GUI.
+    """
+    config = {}
+    wake_hosts = {}
+    schedules = {}
+    current_section = None
+    
+    if not os.path.exists(CONFIG_FILE):
+        return config, wake_hosts, schedules
+    
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                # Check for section headers
+                if line.startswith('[') and line.endswith(']'):
+                    current_section = line[1:-1]
+                    if current_section.startswith('WAKE_HOST_'):
+                        wake_hosts[current_section] = {}
+                    elif current_section.startswith('SCHEDULE_'):
+                        schedules[current_section] = {}
+                    else:
+                        # Reset if it's not a known section type, allowing for future sections
+                        current_section = None 
+                    continue
+                
+                # Parse key=value pairs
+                if '=' in line:
+                    try:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        # Remove quotes from values if present, strip whitespace again
+                        value = value.strip().strip('"\'').strip()
 
-    def load(self):
-        """Loads the configuration from the file."""
-        if not os.path.exists(self.filepath):
-            raise FileNotFoundError(f"Configuration file not found at {self.filepath}")
-        
-        self.config = configparser.ConfigParser(interpolation=None, allow_no_value=True)
-        self.config.optionxform = str # Preserve case
+                        if current_section:
+                            if current_section.startswith('WAKE_HOST_'):
+                                wake_hosts[current_section][key] = value
+                            elif current_section.startswith('SCHEDULE_'):
+                                schedules[current_section][key] = value
+                        else:
+                            # This is a main config parameter
+                            config[key] = value
+                    except ValueError as e:
+                        log.warning(f"Invalid config line: {line} - {e}")
+    except IOError as e:
+        log.error(f"Cannot read config file: {e}")
+        raise
+    
+    return config, wake_hosts, schedules
 
-        with open(self.filepath, 'r') as f:
-            content = f.read()
-        
-        # Prepend a [global] section to handle key-value pairs before the first section
-        first_section_pos = content.find('[')
-        if first_section_pos > 0 or (first_section_pos == -1 and content.strip()):
-             content = "[global]\n" + content
-
-        self.config.read_string(content)
-
-    def get_main(self, key, fallback=None):
-        """Gets a value from the main (global) configuration."""
-        return self.config.get('global', key, fallback=fallback)
-
-    def get_sections(self, prefix):
-        """Gets all sections starting with a given prefix."""
-        return [s for s in self.config.sections() if s.startswith(prefix)]
-
-    def get_wake_hosts(self):
-        """Returns a dictionary of all wake hosts."""
-        return {s: dict(self.config.items(s)) for s in self.get_sections('WAKE_HOST_')}
-
-    def get_schedules(self):
-        """Returns a dictionary of all schedules."""
-        return {s: dict(self.config.items(s)) for s in self.get_sections('SCHEDULE_')}
-
-    def save_setting(self, key, value, section=None):
-        """Saves a single setting back to the file, preserving comments and structure."""
-        key_regex = re.compile(rf"^\s*{re.escape(key)}\s*=", re.IGNORECASE)
-        
-        with open(self.filepath, 'r') as f:
+def save_setting_to_config(key, value, section=None):
+    """Safely saves a single setting back to the config file with file locking."""
+    section = section or None  # Main config section
+    
+    try:
+        # Use file locking to prevent race conditions
+        with open(CONFIG_FILE, 'r+') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            
             lines = f.readlines()
-
-        with open(self.filepath, 'w') as f:
-            in_correct_section = section is None
+            f.seek(0)
+            f.truncate()
+            
+            in_correct_section = section is None  # True for main config
+            key_found = False
+            
             for line in lines:
                 stripped = line.strip()
+                
+                # Check for section headers
                 if stripped.startswith('[') and stripped.endswith(']'):
                     current_section = stripped[1:-1]
                     in_correct_section = current_section == section
-
-                if in_correct_section and key_regex.match(stripped):
-                    original_key_part = line.split('=')[0]
-                    f.write(f'{original_key_part}= "{value}"\n')
-                else:
                     f.write(line)
+                    continue
+                
+                # Check for our key in the correct section
+                if in_correct_section and '=' in stripped and not stripped.startswith('#'):
+                    line_key = stripped.split('=')[0].strip()
+                    if line_key == key:
+                        # Preserve original formatting but update value
+                        indent = len(line) - len(line.lstrip())
+                        f.write(' ' * indent + f'{key}="{value}"\n')
+                        key_found = True
+                        continue
+                
+                f.write(line)
+            
+            # If key wasn't found, add it to the end of the correct section
+            if not key_found:
+                if section is not None:
+                    f.write(f'\n[{section}]\n')
+                f.write(f'{key}="{value}"\n')
+                
+    except IOError as e:
+        log.error(f"Failed to save setting {key}={value}: {e}")
+        raise
 
 class Notifier:
     """Handles sending email notifications."""
-    def __init__(self, config_manager):
-        self.config = config_manager
+    def __init__(self, config):
+        self.config = config
         self.debounce_file = NOTIFICATION_STATE_FILE
         if not os.path.exists(self.debounce_file):
             open(self.debounce_file, 'a').close()
@@ -129,12 +173,12 @@ class Notifier:
     def send(self, n_type, subject, body):
         """Sends a notification if enabled and not debounced."""
         enabled_var = f"NOTIFY_{n_type.upper()}"
-        if self.config.get_main(enabled_var, 'false').lower() != 'true':
+        if self.config.get(enabled_var, 'false').lower() != 'true':
             log.info(f"Notification for {n_type} is disabled. Skipping.")
             return
 
         if n_type == "APP_ERROR":
-            debounce_seconds = 3600 # From original script
+            debounce_seconds = 3600
             last_sent = self._get_debounce_timestamp(n_type)
             if last_sent and (datetime.now() - last_sent).total_seconds() < debounce_seconds:
                 log.warning(f"Error notification for {n_type} is debounced. Skipping.")
@@ -155,31 +199,33 @@ class Notifier:
             with open(self.debounce_file, 'r') as f:
                 for line in f:
                     if line.startswith(f"{n_type}_LAST_SENT="):
-                        return datetime.fromtimestamp(int(line.strip().split('=')[1]))
+                        timestamp_str = line.strip().split('=')[1]
+                        return datetime.fromtimestamp(int(timestamp_str))
         except (IOError, ValueError, IndexError):
-            return None
+            pass
         return None
 
     def _set_debounce_timestamp(self, n_type):
         try:
-            lines = []
-            if os.path.exists(self.debounce_file):
-                with open(self.debounce_file, 'r') as f:
-                    lines = [l for l in f if not l.startswith(f"{n_type}_LAST_SENT=")]
-            lines.append(f"{n_type}_LAST_SENT={int(datetime.now().timestamp())}\n")
-            with open(self.debounce_file, 'w') as f:
+            # Use file locking for safe concurrent access
+            with open(self.debounce_file, 'r+') as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                lines = [l for l in f if not l.startswith(f"{n_type}_LAST_SENT=")]
+                lines.append(f"{n_type}_LAST_SENT={int(datetime.now().timestamp())}\n")
+                f.seek(0)
+                f.truncate()
                 f.writelines(lines)
         except IOError as e:
             log.error(f"Could not update debounce timestamp file: {e}")
 
     def _send_email(self, subject, body):
-        smtp_server = self.config.get_main('SMTP_SERVER')
-        smtp_port = int(self.config.get_main('SMTP_PORT', 587))
-        smtp_user = self.config.get_main('SMTP_USER')
-        smtp_password = self.config.get_main('SMTP_PASSWORD')
-        sender_name = self.config.get_main('SMTP_SENDER_NAME', 'UPS Server')
-        sender_email = self.config.get_main('SMTP_SENDER_EMAIL')
-        recipients = [e.strip() for e in self.config.get_main('SMTP_RECIPIENTS', '').split(',') if e.strip()]
+        smtp_server = self.config.get('SMTP_SERVER')
+        smtp_port = int(self.config.get('SMTP_PORT', 587))
+        smtp_user = self.config.get('SMTP_USER')
+        smtp_password = self.config.get('SMTP_PASSWORD')
+        sender_name = self.config.get('SMTP_SENDER_NAME', 'UPS Server')
+        sender_email = self.config.get('SMTP_SENDER_EMAIL')
+        recipients = [e.strip() for e in self.config.get('SMTP_RECIPIENTS', '').split(',') if e.strip()]
 
         if not all([smtp_server, sender_email, recipients]):
             raise ValueError("SMTP server, sender email, and recipients must be configured.")
@@ -190,25 +236,32 @@ class Notifier:
         msg['To'] = ', '.join(recipients)
 
         server = None
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=10)
-        else:
-            server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
-            if smtp_port != 26:
-                server.starttls()
-        
-        if smtp_user and smtp_password:
-            server.login(smtp_user, smtp_password)
-        
-        server.sendmail(sender_email, recipients, msg.as_string())
-        server.quit()
+        try:
+            if smtp_port == 465:
+                server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=10)
+            else:
+                server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
+                if smtp_port != 26:
+                    server.starttls()
+            
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
+            
+            server.sendmail(sender_email, recipients, msg.as_string())
+            
+        finally:
+            if server:
+                try:
+                    server.quit()
+                except:
+                    pass
 
 class PowerManager:
-    """Main application logic."""
+    """Main application logic with improved error handling and file locking."""
     def __init__(self):
         try:
-            self.config = ConfigManager(CONFIG_FILE)
-        except FileNotFoundError as e:
+            self.config, self.wake_hosts, self.schedules = read_power_manager_config()
+        except (FileNotFoundError, IOError) as e:
             log.error(f"CRITICAL ERROR: {e}. Exiting.")
             sys.exit(1)
         
@@ -218,40 +271,72 @@ class PowerManager:
         self.client_notification_states = {}
 
     def _load_state(self):
+        """Safely load state from files with comprehensive error handling."""
         if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, 'r') as f:
-                for line in f:
-                    if '=' in line:
-                        key, value = line.strip().split('=', 1)
-                        if key == 'STATE': self.power_state = value
-                        elif key == 'TIMESTAMP': self.power_state_timestamp = int(value)
+            try:
+                with open(STATE_FILE, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if '=' in line:
+                            try:
+                                key, value = line.split('=', 1)
+                                if key == 'STATE': 
+                                    self.power_state = value
+                                elif key == 'TIMESTAMP': 
+                                    self.power_state_timestamp = int(value)
+                            except (ValueError, TypeError) as e:
+                                log.warning(f"Invalid state file line: {line} - {e}")
+            except IOError as e:
+                log.error(f"Cannot read state file: {e}")
         
         if os.path.exists(CLIENT_NOTIFICATION_STATE_FILE):
-            with open(CLIENT_NOTIFICATION_STATE_FILE, 'r') as f:
-                for line in f:
-                    if '=' in line:
-                        key, value = line.strip().split('=', 1)
-                        self.client_notification_states[key] = value == 'true'
+            try:
+                with open(CLIENT_NOTIFICATION_STATE_FILE, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if '=' in line:
+                            try:
+                                key, value = line.split('=', 1)
+                                self.client_notification_states[key] = value.lower() == 'true'
+                            except ValueError as e:
+                                log.warning(f"Invalid client notification state line: {line} - {e}")
+            except IOError as e:
+                log.error(f"Cannot read client notification state file: {e}")
 
     def _save_power_state(self, state):
-        with open(STATE_FILE, 'w') as f:
-            f.write(f"STATE={state}\n")
-            f.write(f"TIMESTAMP={int(datetime.now().timestamp())}\n")
+        """Safely save power state with file locking."""
+        try:
+            with open(STATE_FILE, 'w') as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                f.write(f"STATE={state}\n")
+                f.write(f"TIMESTAMP={int(datetime.now().timestamp())}\n")
+        except IOError as e:
+            log.error(f"Cannot save power state: {e}")
 
     def _clear_file(self, filepath):
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        open(filepath, 'a').close()
+        """Safely clear and recreate a file."""
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            open(filepath, 'a').close()
+        except IOError as e:
+            log.error(f"Cannot clear file {filepath}: {e}")
 
     def _update_ups_status_file(self, status_line):
-        ups_file = self.config.get_main('UPS_STATE_FILE', UPS_STATE_FILE_DEFAULT)
-        with open(ups_file, 'w') as f:
-            f.write(status_line + '\n')
+        """Update UPS status file with error handling."""
+        ups_file = self.config.get('UPS_STATE_FILE', UPS_STATE_FILE_DEFAULT)
+        try:
+            with open(ups_file, 'w') as f:
+                f.write(status_line + '\n')
+        except IOError as e:
+            log.error(f"Cannot update UPS status file: {e}")
 
     def _check_schedules(self):
+        """Check and execute scheduled actions."""
         now = datetime.now()
-        for section, params in self.config.get_schedules().items():
-            if params.get('ENABLED', 'false').lower() != 'true': continue
+        for section, params in self.schedules.items():
+            if params.get('ENABLED', 'false').lower() != 'true': 
+                continue
 
             match = False
             if params.get('TYPE') == 'one-time' and params.get('DATE') == now.strftime('%Y-%m-%d') and params.get('TIME') == now.strftime('%H:%M'):
@@ -265,155 +350,270 @@ class PowerManager:
                 action, name = params.get('ACTION', '').lower(), params.get('NAME', section)
                 log.info(f"Schedule match: [{name}] triggers action [{action}].")
                 
-                if action == 'start':
-                    self.config.save_setting('POWER_SIMULATION_MODE', 'true')
-                    self.notifier.send("SIMULATION_MODE", "[UPS] INFO: Power Outage Simulation Started", "Scheduled start of power outage simulation.")
-                elif action == 'stop':
-                    self.config.save_setting('POWER_SIMULATION_MODE', 'false')
-                    self.notifier.send("SIMULATION_MODE", "[UPS] INFO: Power Outage Simulation Stopped", "Scheduled stop of power outage simulation.")
+                try:
+                    if action == 'start':
+                        save_setting_to_config('POWER_SIMULATION_MODE', 'true')
+                        self.notifier.send("SIMULATION_MODE", "[UPS] INFO: Power Outage Simulation Started", "Scheduled start of power outage simulation.")
+                    elif action == 'stop':
+                        save_setting_to_config('POWER_SIMULATION_MODE', 'false')
+                        self.notifier.send("SIMULATION_MODE", "[UPS] INFO: Power Outage Simulation Stopped", "Scheduled stop of power outage simulation.")
+                    
+                    if params.get('TYPE') == 'one-time':
+                        save_setting_to_config('ENABLED', 'false', section=section)
+                    
+                    # Reload config after changes
+                    self.config, self.wake_hosts, self.schedules = read_power_manager_config()
+                    
+                except Exception as e:
+                    log.error(f"Failed to execute scheduled action: {e}")
                 
-                if params.get('TYPE') == 'one-time':
-                    self.config.save_setting('ENABLED', 'false', section=section)
-                
-                self.config.load() # Reload config after potential change
                 break
 
     def _determine_power_status(self):
-        if self.config.get_main('POWER_SIMULATION_MODE', 'false').lower() == 'true':
+        """Determine current power status with improved error handling."""
+        if self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true':
             log.warning("Power Outage Simulation is active. Forcing OFFLINE.")
             return "OFFLINE"
         
-        sentinel_hosts = self.config.get_main('SENTINEL_HOSTS', '').split()
-        if not sentinel_hosts: return "ONLINE"
+        sentinel_hosts = self.config.get('SENTINEL_HOSTS', '').split()
+        if not sentinel_hosts: 
+            log.warning("No sentinel hosts configured, assuming power is ONLINE")
+            return "ONLINE"
 
         for ip in sentinel_hosts:
             try:
-                if subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip], capture_output=True, timeout=2).returncode == 0:
+                result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip], 
+                                      capture_output=True, timeout=3)
+                if result.returncode == 0:
                     log.info(f"Sentinel host {ip} is online. Power is ON.")
                     return "ONLINE"
-            except subprocess.TimeoutExpired:
-                pass
+                else:
+                    log.debug(f"Sentinel host {ip} is offline.")
+            except (subprocess.TimeoutExpired, OSError) as e:
+                log.warning(f"Failed to ping sentinel host {ip}: {e}")
         
         log.warning("All sentinel hosts are offline. Power is OFF.")
         return "OFFLINE"
 
     def _handle_power_offline(self):
+        """Handle power offline state."""
         if self.power_state != "POWER_FAIL":
             log.warning("STATE CHANGE: Power failure detected!")
             self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
             self.client_notification_states = {}
-            self.notifier.send("POWER_FAIL", "[UPS] ALERT: Power Outage Detected", "All sentinel hosts are offline. System is on UPS power.")
+            self.notifier.send("POWER_FAIL", "[UPS] ALERT: Power Outage Detected", 
+                             "All sentinel hosts are offline. System is on UPS power.")
             self._save_power_state("POWER_FAIL")
         self._update_ups_status_file("ups.status: OB LB")
 
     def _handle_power_online(self):
+        """Handle power online state."""
         self._update_ups_status_file("ups.status: OL")
-        if not self.power_state: return
+        if not self.power_state: 
+            return
 
         now_ts = int(datetime.now().timestamp())
-        wol_delay = int(self.config.get_main('WOL_DELAY_MINUTES', 5))
+        wol_delay = int(self.config.get('WOL_DELAY_MINUTES', 5))
         
         if self.power_state == "POWER_FAIL":
-            duration = (now_ts - self.power_state_timestamp) // 60
+            duration = (now_ts - self.power_state_timestamp) // 60 if self.power_state_timestamp else 0
             log.info("STATE CHANGE: Power restoration detected.")
             self.notifier.send("POWER_RESTORED", "[UPS] INFO: Power Restored",
                                f"Power restored after ~{duration} mins. Waiting {wol_delay} mins for WoL.")
             self._save_power_state("POWER_RESTORED")
 
         elif self.power_state == "POWER_RESTORED":
-            if (now_ts - self.power_state_timestamp) >= (wol_delay * 60):
+            if self.power_state_timestamp and (now_ts - self.power_state_timestamp) >= (wol_delay * 60):
                 log.info("WoL delay passed. Initiating wake-up sequence.")
                 self._initiate_wol()
                 self._clear_file(STATE_FILE)
                 self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
 
     def _initiate_wol(self):
-        wake_hosts = self.config.get_wake_hosts()
-        default_broadcast = self.config.get_main('DEFAULT_BROADCAST_IP')
+        """Initiate Wake-on-LAN sequence with comprehensive error handling and status tracking."""
+        default_broadcast = self.config.get('DEFAULT_BROADCAST_IP')
         woken_hosts = []
 
-        for params in wake_hosts.values():
-            if params.get('AUTO_WOL', 'true').lower() == 'false': continue
+        for section, params in self.wake_hosts.items():
+            if params.get('AUTO_WOL', 'true').lower() == 'false': 
+                continue
+                
             ip, mac = params.get('IP'), params.get('MAC')
-            if not ip or not mac: continue
+            if not ip or not mac: 
+                log.warning(f"Skipping WoL for {params.get('NAME', 'unknown')} - missing IP or MAC")
+                continue
 
-            if subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip], capture_output=True).returncode != 0:
-                broadcast = params.get('BROADCAST_IP', default_broadcast)
-                log.info(f"Sending WoL to {params.get('NAME')} ({ip}) via {broadcast}.")
-                subprocess.run([WAKEONLAN_CMD, "-i", broadcast, mac])
-                self._update_client_status_json(ip, "wol_sent")
-                woken_hosts.append(f"- {params.get('NAME')} ({ip})")
+            try:
+                # Check if host is already online
+                ping_result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip], 
+                                           capture_output=True, timeout=3)
+                
+                if ping_result.returncode != 0:
+                    broadcast = params.get('BROADCAST_IP', default_broadcast)
+                    log.info(f"Sending WoL to {params.get('NAME')} ({ip}) via {broadcast}.")
+                    
+                    # Send WoL packet and check result (improved from original)
+                    wol_result = subprocess.run([WAKEONLAN_CMD, "-i", broadcast, mac], 
+                                              capture_output=True, timeout=5)
+                    
+                    if wol_result.returncode == 0:
+                        self._update_client_status_json(ip, "wol_sent")
+                        woken_hosts.append(f"- {params.get('NAME')} ({ip})")
+                        log.info(f"WoL packet sent successfully to {params.get('NAME')} ({ip})")
+                    else:
+                        log.error(f"Failed to send WoL packet to {params.get('NAME')} ({ip}): {wol_result.stderr.decode()}")
+                        self._update_client_status_json(ip, "wol_failed")
+                else:
+                    log.info(f"Host {params.get('NAME')} ({ip}) is already online.")
+                    
+            except (subprocess.TimeoutExpired, OSError) as e:
+                log.error(f"Error during WoL process for {params.get('NAME')} ({ip}): {e}")
+                self._update_client_status_json(ip, "wol_error")
 
         if woken_hosts:
             self.notifier.send("POWER_RESTORED", "[UPS] INFO: WoL Sequence Initiated",
                                "Sent WoL signals to:\n\n" + "\n".join(woken_hosts))
 
     def _update_client_status_json(self, ip, status):
+        """Update client status JSON with atomic writes and compatible format."""
         statuses = {}
-        if os.path.exists(CLIENT_STATUS_FILE):
-            try:
-                with open(CLIENT_STATUS_FILE, 'r') as f: statuses = json.load(f)
-            except (IOError, json.JSONDecodeError): pass
+        
+        try:
+            if os.path.exists(CLIENT_STATUS_FILE):
+                with open(CLIENT_STATUS_FILE, 'r') as f: 
+                    statuses = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            log.warning(f"Failed to read client status file: {e}")
 
-        statuses[ip] = {"status": status, "timestamp": datetime.utcnow().isoformat() + "Z"}
-        with open(CLIENT_STATUS_FILE, 'w') as f: json.dump(statuses, f, indent=2)
+        try:
+            # Use timestamp format compatible with Web GUI expectations
+            timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            statuses[ip] = {
+                "status": status, 
+                "timestamp": timestamp,
+                "remaining_seconds": None,
+                "shutdown_delay": None
+            }
+            
+            # Use atomic write operation
+            temp_file = CLIENT_STATUS_FILE + ".tmp"
+            with open(temp_file, 'w') as f: 
+                json.dump(statuses, f, indent=2)
+            os.rename(temp_file, CLIENT_STATUS_FILE)
+                
+        except (IOError, json.JSONDecodeError) as e:
+            log.error(f"Failed to update client status file: {e}")
 
     def _check_client_statuses(self):
-        if not os.path.exists(CLIENT_STATUS_FILE): return
+        """Check client statuses and send notifications with improved error handling."""
+        if not os.path.exists(CLIENT_STATUS_FILE): 
+            return
+            
         try:
-            with open(CLIENT_STATUS_FILE, 'r') as f: client_statuses = json.load(f)
-        except (IOError, json.JSONDecodeError): return
+            with open(CLIENT_STATUS_FILE, 'r') as f: 
+                client_statuses = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            log.error(f"Failed to parse client status file: {e}")
+            return
 
         now = datetime.utcnow()
-        stale_minutes = int(self.config.get_main('CLIENT_STALE_TIMEOUT_MINUTES', 5))
+        stale_minutes = int(self.config.get('CLIENT_STALE_TIMEOUT_MINUTES', 5))
         
-        for params in self.config.get_wake_hosts().values():
-            if 'SHUTDOWN_DELAY_MINUTES' not in params: continue
+        for section, params in self.wake_hosts.items():
+            if 'SHUTDOWN_DELAY_MINUTES' not in params: 
+                continue
+                
             ip, name = params.get('IP'), params.get('NAME', 'N/A')
-            if not ip or not (status_data := client_statuses.get(ip)): continue
+            if not ip: 
+                continue
+                
+            status_data = client_statuses.get(ip)
+            if not status_data: 
+                continue
 
+            # Check for shutdown notification
             shutdown_flag = f"SHUTDOWN_NOTIFIED_{ip.replace('.', '_')}"
-            if status_data.get('status') == 'shutdown_pending' and not self.client_notification_states.get(shutdown_flag):
-                self.notifier.send("CLIENT_SHUTDOWN", "[UPS] ALERT: Client Shutdown", f"Client '{name}' ({ip}) is shutting down.")
+            if (status_data.get('status') == 'shutdown_pending' and 
+                not self.client_notification_states.get(shutdown_flag)):
+                
+                self.notifier.send("CLIENT_SHUTDOWN", "[UPS] ALERT: Client Shutdown", 
+                                 f"Client '{name}' ({ip}) is shutting down.")
                 self.client_notification_states[shutdown_flag] = True
 
+            # Check for stale status with robust timestamp parsing
             stale_flag = f"STALE_NOTIFIED_{ip.replace('.', '_')}"
             try:
-                ts = datetime.fromisoformat(status_data.get('timestamp', '').replace('Z', '+00:00'))
-                if (now - ts) > timedelta(minutes=stale_minutes):
-                    if not self.client_notification_states.get(stale_flag):
-                        self.notifier.send("CLIENT_STALE", "[UPS] WARNING: Client Stale", f"Client '{name}' ({ip}) is stale.")
-                        self.client_notification_states[stale_flag] = True
-                elif stale_flag in self.client_notification_states:
-                    del self.client_notification_states[stale_flag]
-            except (ValueError, TypeError): pass
+                timestamp_str = status_data.get('timestamp', '')
+                if timestamp_str:
+                    # Handle both ISO format and RFC3339 format
+                    if timestamp_str.endswith('Z'):
+                        ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    else:
+                        ts = datetime.fromisoformat(timestamp_str)
+                    
+                    # Convert to UTC if necessary
+                    if ts.tzinfo is not None:
+                        ts = ts.replace(tzinfo=None)
+                    
+                    time_diff = (now - ts).total_seconds()
+                    
+                    if time_diff > (stale_minutes * 60):
+                        if not self.client_notification_states.get(stale_flag):
+                            self.notifier.send("CLIENT_STALE", "[UPS] WARNING: Client Stale", 
+                                             f"Client '{name}' ({ip}) has not reported for {stale_minutes}+ minutes.")
+                            self.client_notification_states[stale_flag] = True
+                    elif stale_flag in self.client_notification_states:
+                        # Status is fresh again, clear the stale flag
+                        log.info(f"Client '{name}' ({ip}) has recovered from stale status.")
+                        del self.client_notification_states[stale_flag]
+                        
+            except (ValueError, TypeError) as e:
+                log.warning(f"Invalid timestamp format for client {ip}: {timestamp_str} - {e}")
 
     def run(self):
+        """Main execution method with comprehensive error handling."""
         log.info("--- Power check initiated ---")
         try:
             self._load_state()
             self._check_schedules()
             power_status = self._determine_power_status()
 
-            if power_status == "OFFLINE": self._handle_power_offline()
-            else: self._handle_power_online()
+            if power_status == "OFFLINE": 
+                self._handle_power_offline()
+            else: 
+                self._handle_power_online()
             
             self._check_client_statuses()
-            with open(CLIENT_NOTIFICATION_STATE_FILE, 'w') as f:
-                for k, v in self.client_notification_states.items():
-                    f.write(f"{k}={str(v).lower()}\n")
+            
+            # Save client notification states with file locking
+            try:
+                with open(CLIENT_NOTIFICATION_STATE_FILE, 'w') as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    for k, v in self.client_notification_states.items():
+                        f.write(f"{k}={str(v).lower()}\n")
+            except IOError as e:
+                log.error(f"Cannot save client notification states: {e}")
 
         except Exception as e:
             log.error(f"Unhandled exception: {e}", exc_info=True)
-            self.notifier.send("APP_ERROR", "[UPS] CRITICAL: Script Failed", f"The main power manager script failed. Error: {e}")
+            try:
+                self.notifier.send("APP_ERROR", "[UPS] CRITICAL: Script Failed", 
+                                 f"The main power manager script failed. Error: {e}")
+            except:
+                pass  # Don't fail on notification failure
         finally:
             log.info("--- Power check finished ---")
 
 if __name__ == "__main__":
+    # Ensure required files exist with proper error handling
     for f in [STATE_FILE, NOTIFICATION_STATE_FILE, CLIENT_NOTIFICATION_STATE_FILE, CLIENT_STATUS_FILE]:
-        if not os.path.exists(f):
-            open(f, 'a').close()
-            if f.endswith('.json'):
-                with open(f, 'w') as jf: jf.write('{}')
+        try:
+            if not os.path.exists(f):
+                open(f, 'a').close()
+                if f.endswith('.json'):
+                    with open(f, 'w') as jf: 
+                        jf.write('{}')
+        except IOError as e:
+            print(f"Warning: Cannot create {f}: {e}", file=sys.stderr)
 
     PowerManager().run()

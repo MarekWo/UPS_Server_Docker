@@ -435,6 +435,18 @@ function updateClientStatusUI(clientStatuses) {
         } else if (detailedStatus && detailedStatus.status === 'wol_sent') {
             if (isPingable) statusHtml = `<span class="status-online"><i class="fas fa-spinner fa-spin me-1"></i>Booting...</span>`;
             else statusHtml = `<span class="badge bg-info"><i class="fas fa-magic me-1"></i>WoL sent</span>`;
+        // === NEW STATUSES WoL ===
+        } else if (detailedStatus && detailedStatus.status === 'wol_failed') {
+            statusHtml = `<span class="badge bg-danger text-white" title="Wake-on-LAN command failed to execute"><i class="fas fa-exclamation-triangle me-1"></i>WoL Failed</span>`;
+            // Pokaż przycisk WoL dla ponownej próby
+            if (wolButton) wolButton.style.display = 'inline-block';
+            if (wolButtonMobile) wolButtonMobile.style.display = 'inline-block';
+        } else if (detailedStatus && detailedStatus.status === 'wol_error') {
+            statusHtml = `<span class="badge bg-warning text-dark" title="Error occurred during Wake-on-LAN process"><i class="fas fa-exclamation-circle me-1"></i>WoL Error</span>`;
+            // Pokaż przycisk WoL dla ponownej próby
+            if (wolButton) wolButton.style.display = 'inline-block';
+            if (wolButtonMobile) wolButtonMobile.style.display = 'inline-block';
+        // === END OF NEW STATUSES ===
         } else if (isPingable && (!detailedStatus || minutesSinceUpdate > 2.5)) {
             statusHtml = `<span class="status-offline" title="The host is online, but the UPS_monitor agent is not reporting."><i class="fas fa-tools me-1"></i> Online (No Agent)</span>`;
         } else {
