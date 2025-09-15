@@ -26,7 +26,7 @@ echo "Setting up cron job with Timezone: ${TZ:-UTC}"
 # Dynamically create the cron file using the TZ variable from docker-compose
 # This ensures the cron job runs in the user-specified timezone
 echo "TZ=${TZ:-UTC}" > /etc/cron.d/power-manager-cron
-echo "* * * * * root /app/power_manager.sh >> /var/log/power_manager.log 2>&1" >> /etc/cron.d/power-manager-cron
+echo "* * * * * root /usr/local/bin/python /app/power_manager.py" >> /etc/cron.d/power-manager-cron
 
 # Apply correct permissions to the cron file
 chmod 0644 /etc/cron.d/power-manager-cron
