@@ -20,9 +20,23 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from werkzeug.exceptions import BadRequest
 
 
-# Add the current directory to Python path to import api module
+# Add the current directory to Python path to import modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from api import API_TOKEN, get_ups_name, get_server_ip
+
+# Import version information
+try:
+    from version_info import get_version_info, get_version_string
+except ImportError:
+    # Fallback if version_info module is not available
+    def get_version_info():
+        return {
+            "version_string": "development",
+            "commit_hash": "unknown",
+            "source": "fallback"
+        }
+    def get_version_string():
+        return "development"
 
 app = Flask(__name__)
 app.secret_key = 'ups_server_gui_secret_key_change_in_production'
@@ -293,6 +307,9 @@ def index():
         # Get client statuses
         client_statuses = get_client_statuses()
 
+        # Get version information
+        version_info = get_version_info()
+
         return render_template('dashboard.html',
                              pm_config=pm_config,
                              wake_hosts=wake_hosts,
@@ -301,10 +318,11 @@ def index():
                              sentinel_hosts=sentinel_hosts,
                              sentinel_status=sentinel_status,
                              wake_host_status=wake_host_status,
-                             client_statuses=client_statuses) 
+                             client_statuses=client_statuses,
+                             version_info=version_info) 
     except Exception as e:
         flash(f'Error loading configuration: {str(e)}', 'error')
-        return render_template('dashboard.html')
+        return render_template('dashboard.html', version_info=get_version_info())
 
 @app.route('/config')
 def config():
@@ -317,13 +335,20 @@ def config():
                              pm_config=pm_config,
                              wake_hosts=wake_hosts,
                              ups_clients=ups_clients,
-                             schedules=schedules)
+                             schedules=schedules,
+                             version_info=get_version_info())
     except Exception as e:
         app.logger.error(f"Error in config route: {str(e)}", exc_info=True)
         flash(f'Error loading configuration: {str(e)}', 'error')
         return f"Error: {str(e)}", 500
 
+# --- New Version Endpoint ---
+@app.route('/version')
+def version_endpoint():
+    """API endpoint to get version information"""
+    return jsonify(get_version_info())
 
+# [Rest of the routes remain the same as in the original file]
 @app.route('/save_main_config', methods=['POST'])
 def save_main_config():
     """Save main and SMTP power manager configuration"""

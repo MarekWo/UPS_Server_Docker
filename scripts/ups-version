@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# ups-version - Global CLI tool for UPS Server version management
+# This script should be placed in /usr/local/bin/ and made executable
+
+set -e
+
+SCRIPT_DIR="/app"
+PYTHON_CMD="python3"
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+# Help function
+show_help() {
+    echo "UPS Server Docker Version Management Tool"
+    echo ""
+    echo "Usage: ups-version [COMMAND]"
+    echo ""
+    echo "Commands:"
+    echo "  info      Show detailed version information"
+    echo "  string    Show just the version string"
+    echo "  json      Output version information as JSON"
+    echo "  freeze    Freeze current version to file"
+    echo "  help      Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  ups-version info"
+    echo "  ups-version string"
+    echo "  ups-version freeze"
+}
+
+# Check if we can access the version script
+if [ ! -f "$SCRIPT_DIR/version_info.py" ]; then
+    echo -e "${RED}Error: UPS Server version script not found at $SCRIPT_DIR/version_info.py${NC}" >&2
+    echo "Make sure UPS Server Docker is properly installed." >&2
+    exit 1
+fi
+
+# Default command is info
+COMMAND=${1:-info}
+
+case "$COMMAND" in
+    "info"|"")
+        cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py info
+        ;;
+    "string")
+        cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py string
+        ;;
+    "json")
+        cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py json
+        ;;
+    "freeze")
+        cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py freeze
+        ;;
+    "help"|"-h"|"--help")
+        show_help
+        ;;
+    *)
+        echo -e "${RED}Error: Unknown command '$COMMAND'${NC}" >&2
+        echo ""
+        show_help
+        exit 1
+        ;;
+esac

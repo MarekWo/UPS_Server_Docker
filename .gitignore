@@ -14,6 +14,10 @@ logs/
 # Ignore local environment file
 .env
 
+# Ignore version information files (generated automatically)
+app/version_info.json
+version_info.json
+
 *.bkp
 *.svg
 *.drawio
@@ -22,3 +26,4 @@ logs/
 mods/*
 .venv/
 .vscode/
+.dockerignore

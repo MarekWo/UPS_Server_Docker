@@ -260,6 +260,37 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Version Information Footer -->
+<div class="row mt-5">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body text-center py-2">
+                <small class="text-muted">
+                    Powered by UPS Server Docker 
+                    {% if version_info %}
+                        - <span class="badge bg-secondary">{{ version_info.version_string }}</span>
+                        {% if version_info.source == 'git' %}
+                            <i class="fas fa-code-branch ms-2" title="Branch: {{ version_info.branch }}"></i>
+                        {% elif version_info.source == 'file' %}
+                            <i class="fas fa-archive ms-2" title="Frozen build"></i>
+                        {% else %}
+                            <i class="fas fa-question-circle ms-2" title="Fallback version"></i>
+                        {% endif %}
+                        <span class="d-none d-md-inline">
+                            | {{ version_info.commit_hash }}
+                            {% if version_info.commit_date != 'unknown' %}
+                                | {{ version_info.commit_date[:10] }}
+                            {% endif %}
+                        </span>
+                    {% else %}
+                        - development
+                    {% endif %}
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}

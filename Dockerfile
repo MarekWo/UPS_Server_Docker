@@ -19,7 +19,8 @@ RUN apt-get update && \
     jq \
     logrotate \
     rsyslog \
-    tzdata && \
+    tzdata \
+    git && \
     # Clean up the apt cache to reduce image size
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -33,11 +34,28 @@ WORKDIR /app
 # Copy the application scripts into the container
 COPY app/ .
 
+# Copy scripts directory (for CLI tools)
+COPY scripts/ /scripts/
+
 # Create templates directory for Web GUI
 RUN mkdir -p /app/templates
 
 # Make the power manager script executable
 RUN chmod +x /app/power_manager.py
+
+# --- Version Information Setup ---
+# Note: For version information to work properly with Git data, build the image from
+# the root of the git repository. The build context will include .git automatically 
+# unless excluded by .dockerignore. If Git is not available, fallback versioning 
+# will be used at runtime.
+
+# Try to freeze version information during build if Git is available
+RUN if [ -d .git ]; then \
+        echo "Git repository detected, freezing version..."; \
+        python version_info.py freeze; \
+    else \
+        echo "No Git repository found, will use runtime fallback versioning"; \
+    fi
 
 # --- Logrotate Setup ---
 COPY logrotate/power-manager-logrotate /etc/logrotate.d/

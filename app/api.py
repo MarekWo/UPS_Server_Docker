@@ -12,8 +12,22 @@ import configparser
 import os
 import subprocess
 import json
+import sys
 from datetime import datetime
 from flask import Flask, jsonify, request, abort
+
+# Add current directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Import version information
+try:
+    from version_info import get_version_info, get_version_string
+except ImportError:
+    # Fallback if version_info module is not available
+    def get_version_info():
+        return {"version_string": "development", "source": "fallback"}
+    def get_version_string():
+        return "development"
 
 # --- Configuration ---
 UPSC_CMD = "/usr/bin/upsc"
@@ -214,6 +228,14 @@ def load_api_token():
 API_TOKEN = load_api_token()
 
 # --- API Endpoints ---
+
+@app.route('/version', methods=['GET'])
+def get_version():
+    """
+    Endpoint to retrieve version information.
+    No authentication required for version info.
+    """
+    return jsonify(get_version_info())
 
 @app.route('/upsc', methods=['GET'])
 def get_upsc_data():
