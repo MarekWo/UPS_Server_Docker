@@ -26,4 +26,4 @@ version_info.json
 mods/*
 .venv/
 .vscode/
-.dockerignore
+# .dockerignore
