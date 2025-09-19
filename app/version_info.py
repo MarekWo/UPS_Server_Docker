@@ -51,6 +51,9 @@ def get_git_version_info():
         if not run_git_command("git rev-parse --git-dir"):
             return None
             
+        # Ignore file mode changes that can happen during Docker build
+        run_git_command("git config core.filemode false")
+
         # Get commit hash (short)
         commit_hash = run_git_command("git rev-parse --short HEAD")
         
