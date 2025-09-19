@@ -24,9 +24,21 @@ EOF
 fi
 
 # Ensure version info is available (freeze if not already done)
-if [ ! -f /app/version_info.json ] && [ -f /app/version_info.py ]; then
-    echo "Freezing version information..."
-    cd /app && python3 version_info.py freeze || echo "Warning: Could not freeze version"
+if [ ! -f /app/version_info.json ]; then
+    echo "Version file not found. Attempting to freeze version at runtime..."
+    # Check if .git directory exists before trying to use it
+    if [ -d "/app/.git" ]; then
+        echo "Git repository found. Freezing version from Git..."
+        if ! (cd /app && python3 version_info.py freeze); then
+            echo "Warning: Failed to freeze version information, but Git repo was present."
+        fi
+    else
+        echo "Git repository not found in /app. Creating fallback version."
+        # No need to call freeze with special params, it will create a fallback by default
+        if ! (cd /app && python3 version_info.py freeze); then
+             echo "Warning: Failed to create fallback version file."
+        fi
+    fi
 fi
 
 # Display current version

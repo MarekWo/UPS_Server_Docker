@@ -43,6 +43,9 @@ RUN mkdir -p /app/templates
 # Make the power manager script executable
 RUN chmod +x /app/power_manager.py
 
+# Copy the .git directory to make it available for version freezing
+COPY .git .git
+
 # --- Version Information Setup ---
 # Note: For version information to work properly with Git data, build the image from
 # the root of the git repository. The build context will include .git automatically 
@@ -56,6 +59,9 @@ RUN if [ -d .git ]; then \
     else \
         echo "No Git repository found, will use runtime fallback versioning"; \
     fi
+
+# Clean up the .git directory to keep the final image smaller
+RUN rm -rf .git
 
 # --- Logrotate Setup ---
 COPY logrotate/power-manager-logrotate /etc/logrotate.d/

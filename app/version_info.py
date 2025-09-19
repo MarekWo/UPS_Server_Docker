@@ -35,9 +35,12 @@ def run_git_command(command):
         if result.returncode == 0:
             return result.stdout.strip()
         else:
-            logger.warning(f"Git command failed: {command} - {result.stderr}")
+            # Don't log warnings for commands that are expected to fail as part of the logic,
+            # like trying to find an exact tag.
+            if "no tag" not in result.stderr.strip() and "No names found" not in result.stderr.strip():
+                logger.warning(f"Git command failed: {command} - {result.stderr.strip()}")
             return None
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         logger.warning(f"Git command error: {command} - {str(e)}")
         return None
 
@@ -61,11 +64,11 @@ def get_git_version_info():
         branch = run_git_command("git rev-parse --abbrev-ref HEAD")
         
         # Get tag if exists
-        tag = run_git_command("git describe --tags --exact-match HEAD 2>/dev/null") or \
-              run_git_command("git describe --tags --abbrev=0 2>/dev/null")
+        tag = run_git_command("git describe --tags --exact-match HEAD") or \
+              run_git_command("git describe --tags --abbrev=0")
         
         # Check for uncommitted changes
-        has_changes = run_git_command("git diff --quiet") is None
+        has_changes = run_git_command("git diff --quiet --ignore-cr-at-eol") is None
         dirty_suffix = "+dirty" if has_changes else ""
         
         if commit_hash and commit_date:
