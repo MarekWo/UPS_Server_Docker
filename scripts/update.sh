@@ -41,6 +41,45 @@ log_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
+# Function to freeze version using the best available method
+freeze_version() {
+    local force_clean=${1:-false}
+    
+    # Try to use the CLI tool first (preferred method)
+    if [ -x "./scripts/ups-version" ]; then
+        if [ "$force_clean" = true ]; then
+            ./scripts/ups-version freeze --force-clean
+        else
+            ./scripts/ups-version freeze
+        fi
+        return $?
+    # Fallback to direct Python call
+    elif command -v python3 > /dev/null && [ -f app/version_info.py ]; then
+        if [ "$force_clean" = true ]; then
+            python3 app/version_info.py freeze --force-clean
+        else
+            python3 app/version_info.py freeze
+        fi
+        return $?
+    else
+        log_warning "Version tools not found, skipping version freeze"
+        return 1
+    fi
+}
+
+# Function to get version string using the best available method
+get_version_string() {
+    # Try to use the CLI tool first
+    if [ -x "./scripts/ups-version" ]; then
+        ./scripts/ups-version string 2>/dev/null
+    # Fallback to direct Python call
+    elif command -v python3 > /dev/null && [ -f app/version_info.py ]; then
+        python3 app/version_info.py string 2>/dev/null
+    else
+        echo "unknown"
+    fi
+}
+
 # Check if we're in a git repository
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
     log_error "Not in a git repository!"
@@ -75,10 +114,11 @@ if [ "$LOCAL" = "$REMOTE" ]; then
     
     # Always refresh version (date might have changed)
     log_info "Refreshing version info..."
-    if command -v python3 > /dev/null && [ -f app/version_info.py ]; then
-        python3 app/version_info.py freeze
-        VERSION=$(python3 app/version_info.py string 2>/dev/null || echo "unknown")
+    if freeze_version; then
+        VERSION=$(get_version_string)
         log_success "Current version: $VERSION"
+    else
+        log_warning "Failed to refresh version info"
     fi
     exit 0
 fi
@@ -96,24 +136,20 @@ if [ $STASHED -eq 1 ]; then
     fi
 fi
 
-# Freeze new version
+# Freeze new version with force-clean for consistency
 log_info "Freezing version information..."
-if command -v python3 > /dev/null && [ -f app/version_info.py ]; then
-    if python3 app/version_info.py freeze; then
-        VERSION=$(python3 app/version_info.py string 2>/dev/null || echo "unknown")
-        log_success "Updated to version: $VERSION"
-    else
-        log_warning "Failed to freeze version. Continuing anyway..."
-    fi
+if freeze_version true; then
+    VERSION=$(get_version_string)
+    log_success "Updated to version: $VERSION"
 else
-    log_warning "Python3 or version_info.py not found, skipping version freeze"
+    log_warning "Failed to freeze version. Continuing anyway..."
+    VERSION="unknown"
 fi
 
-# Check if we need to rebuild Docker
+# Parse command line arguments
 FORCE_REBUILD=false
 SHOW_LOG=false
 
-# Parse command line arguments
 for arg in "$@"; do
     case $arg in
         --rebuild)
@@ -130,6 +166,7 @@ for arg in "$@"; do
     esac
 done
 
+# Check if we need to rebuild Docker
 if [ -f Dockerfile ] || [ -f docker-compose.yml ]; then
     echo
     log_info "Docker configuration detected."
@@ -149,7 +186,12 @@ if [ -f Dockerfile ] || [ -f docker-compose.yml ]; then
             docker-compose up --build -d
         else
             log_info "Rebuilding Docker image..."
-            docker build -t ups-server:$VERSION -t ups-server:latest .
+            # Only tag with version if we have a valid one
+            if [ "$VERSION" != "unknown" ] && [ -n "$VERSION" ]; then
+                docker build -t ups-server:"$VERSION" -t ups-server:latest .
+            else
+                docker build -t ups-server:latest .
+            fi
         fi
         log_success "Docker image rebuilt successfully!"
     fi
@@ -162,7 +204,7 @@ echo "=================================="
 log_info "Repository: $(git config --get remote.origin.url)"
 log_info "Branch: $(git rev-parse --abbrev-ref HEAD)"
 log_info "Commit: $(git rev-parse --short HEAD)"
-if [ -n "$VERSION" ]; then
+if [ "$VERSION" != "unknown" ] && [ -n "$VERSION" ]; then
     log_info "Version: $VERSION"
 fi
 echo
