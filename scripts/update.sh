@@ -167,7 +167,7 @@ for arg in "$@"; do
 done
 
 # Check if we need to rebuild Docker
-if [ -f Dockerfile ] || [ -f docker-compose.yml ]; then
+if [ -f Dockerfile ] || [ -f docker compose.yml ]; then
     echo
     log_info "Docker configuration detected."
     
@@ -180,10 +180,10 @@ if [ -f Dockerfile ] || [ -f docker-compose.yml ]; then
     fi
     
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        if [ -f docker-compose.yml ]; then
-            log_info "Rebuilding with docker-compose..."
-            docker-compose down
-            docker-compose up --build -d
+        if [ -f docker compose.yml ]; then
+            log_info "Rebuilding with docker compose..."
+            docker compose down
+            docker compose up --build -d
         else
             log_info "Rebuilding Docker image..."
             # Only tag with version if we have a valid one
