@@ -224,7 +224,7 @@ def save_version_to_file(version_info, filepath):
         logger.error(f"Could not save version to {filepath}: {e}")
         return False
 
-def freeze_version():
+def freeze_version(force_clean=False):
     """Freeze current version information to file."""
     version_info = get_git_version_info()
     
@@ -241,6 +241,12 @@ def freeze_version():
             "build_date": datetime.now().isoformat(),
             "source": "fallback"
         }
+    
+    # Force clean option - remove +dirty suffix
+    if force_clean and version_info and "+dirty" in version_info.get("version_string", ""):
+        version_info["version_string"] = version_info["version_string"].replace("+dirty", "")
+        version_info["commit_message"] = version_info["commit_message"] + " (force cleaned)"
+        logger.info("Forced clean: removed +dirty suffix")
     
     # Get dynamic paths
     primary_path, fallback_path = get_version_file_paths()
@@ -354,9 +360,12 @@ def debug_git_status():
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         if sys.argv[1] == "freeze":
-            result = freeze_version()
+            force_clean = "--force-clean" in sys.argv
+            result = freeze_version(force_clean=force_clean)
             if result:
                 print("✅ Version information frozen successfully")
+                if force_clean:
+                    print("🧹 Forced clean: removed +dirty suffix")
                 print_version_info()
             else:
                 print("❌ Failed to freeze version information")
@@ -367,8 +376,8 @@ if __name__ == "__main__":
             debug_git_status()
         else:
             print("Usage:")
-            print("  python version_info.py freeze  # Freeze current version")
-            print("  python version_info.py info    # Show version info")
-            print("  python version_info.py debug   # Debug git status")
+            print("  python version_info.py freeze [--force-clean]  # Freeze current version")
+            print("  python version_info.py info                    # Show version info")
+            print("  python version_info.py debug                   # Debug git status")
     else:
         print_version_info()

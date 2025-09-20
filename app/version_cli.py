@@ -27,11 +27,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  %(prog)s info          Show version information
-  %(prog)s freeze        Freeze current version to file
-  %(prog)s json          Output version as JSON
-  %(prog)s string        Output just the version string
-  %(prog)s debug         Debug git status (troubleshooting)
+  %(prog)s info                    Show version information
+  %(prog)s freeze                  Freeze current version to file
+  %(prog)s freeze --force-clean    Force clean version (remove +dirty)
+  %(prog)s json                    Output version as JSON
+  %(prog)s string                  Output just the version string
+  %(prog)s debug                   Debug git status (troubleshooting)
         '''
     )
     
@@ -39,15 +40,21 @@ Examples:
                        choices=['info', 'freeze', 'json', 'string', 'debug'],
                        help='Command to execute')
     
+    parser.add_argument('--force-clean', 
+                       action='store_true',
+                       help='Force clean version by removing +dirty suffix (use with freeze)')
+    
     args = parser.parse_args()
     
     if args.command == 'info':
         print_version_info()
     
     elif args.command == 'freeze':
-        result = freeze_version()
+        result = freeze_version(force_clean=args.force_clean)
         if result:
             print("✅ Version information frozen successfully")
+            if args.force_clean:
+                print("🧹 Forced clean: removed +dirty suffix")
             print_version_info()
         else:
             print("❌ Failed to freeze version information", file=sys.stderr)

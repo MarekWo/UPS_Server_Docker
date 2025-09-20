@@ -41,21 +41,23 @@ NC='\033[0m'
 show_help() {
     echo "UPS Server Docker Version Management Tool"
     echo ""
-    echo "Usage: ups-version [COMMAND]"
+    echo "Usage: ups-version [COMMAND] [OPTIONS]"
     echo ""
     echo "Commands:"
-    echo "  info      Show detailed version information"
-    echo "  string    Show just the version string"
-    echo "  json      Output version information as JSON"
-    echo "  freeze    Freeze current version to file"
-    echo "  debug     Debug git status (troubleshooting dirty flags)"
-    echo "  help      Show this help message"
+    echo "  info                Show detailed version information"
+    echo "  string              Show just the version string"
+    echo "  json                Output version information as JSON"
+    echo "  freeze              Freeze current version to file"
+    echo "  freeze --force-clean Freeze version and remove +dirty suffix"
+    echo "  debug               Debug git status (troubleshooting dirty flags)"
+    echo "  help                Show this help message"
     echo ""
     echo "Examples:"
     echo "  ups-version info"
     echo "  ups-version string"
     echo "  ups-version freeze"
-    echo "  ups-version debug     # Use this to troubleshoot +dirty issues"
+    echo "  ups-version freeze --force-clean  # Remove +dirty if present"
+    echo "  ups-version debug                 # Troubleshoot +dirty issues"
     echo ""
     echo "Note: This script works both on host (from project directory)"
     echo "      and inside Docker container."
@@ -97,7 +99,12 @@ case "$COMMAND" in
         cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py json
         ;;
     "freeze")
-        cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py freeze
+        if [ "$2" = "--force-clean" ]; then
+            echo -e "${YELLOW}🧹 Force cleaning version (removing +dirty suffix)...${NC}"
+            cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py freeze --force-clean
+        else
+            cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py freeze
+        fi
         ;;
     "debug")
         echo -e "${YELLOW}🔍 Running Git status debug...${NC}"

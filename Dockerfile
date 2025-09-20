@@ -53,9 +53,10 @@ COPY .git .git
 # will be used at runtime.
 
 # Try to freeze version information during build if Git is available
+# Use --force-clean to ensure no +dirty suffix in Docker builds
 RUN if [ -d .git ]; then \
-        echo "Git repository detected, freezing version..."; \
-        python version_info.py freeze; \
+        echo "Git repository detected, freezing version with force clean..."; \
+        python version_info.py freeze --force-clean; \
     else \
         echo "No Git repository found, will use runtime fallback versioning"; \
     fi
