@@ -50,8 +50,13 @@ fi
 # Check for unstaged changes
 if ! git diff-index --quiet HEAD --; then
     log_warning "You have uncommitted changes. Stashing them..."
-    git stash push -m "Auto-stash before update $(date)"
-    STASHED=1
+    if git stash push -m "Auto-stash before update $(date)"; then
+        STASHED=1
+        log_info "Changes stashed successfully"
+    else
+        log_error "Failed to stash changes"
+        exit 1
+    fi
 else
     STASHED=0
 fi
@@ -70,7 +75,11 @@ if [ "$LOCAL" = "$REMOTE" ]; then
     # Restore stashed changes if any
     if [ $STASHED -eq 1 ]; then
         log_info "Restoring stashed changes..."
-        git stash pop
+        if git stash pop; then
+            log_success "Stashed changes restored successfully"
+        else
+            log_warning "Conflicts during stash pop. Please resolve manually."
+        fi
     fi
     
     log_success "Repository is current"
@@ -85,8 +94,11 @@ git pull origin $BRANCH
 # Restore stashed changes if any
 if [ $STASHED -eq 1 ]; then
     log_info "Restoring stashed changes..."
-    if ! git stash pop; then
+    if git stash pop; then
+        log_success "Stashed changes restored successfully"
+    else
         log_warning "Conflicts during stash pop. Please resolve manually."
+        log_info "You can resolve conflicts and run: git stash drop"
     fi
 fi
 
