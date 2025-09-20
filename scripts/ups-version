@@ -2,11 +2,33 @@
 
 # ups-version - Global CLI tool for UPS Server version management
 # This script should be placed in /usr/local/bin/ and made executable
+# Works both on host and inside container
 
 set -e
 
-SCRIPT_DIR="/app"
-PYTHON_CMD="python3"
+# Auto-detect environment and set appropriate paths
+if [ -f "/app/version_info.py" ]; then
+    # Running inside container
+    SCRIPT_DIR="/app"
+    PYTHON_CMD="python3"
+elif [ -f "./app/version_info.py" ]; then
+    # Running on host in project directory
+    SCRIPT_DIR="./app"
+    PYTHON_CMD="python3"
+elif [ -f "$(dirname $0)/../app/version_info.py" ]; then
+    # Running from scripts directory
+    SCRIPT_DIR="$(dirname $0)/../app"
+    PYTHON_CMD="python3"
+else
+    # Last resort: try to find the script
+    PROJECT_ROOT=$(find /opt -name "version_info.py" -path "*/app/version_info.py" 2>/dev/null | head -1 | dirname 2>/dev/null)
+    if [ -n "$PROJECT_ROOT" ]; then
+        SCRIPT_DIR="$PROJECT_ROOT"
+        PYTHON_CMD="python3"
+    else
+        SCRIPT_DIR=""
+    fi
+fi
 
 # Colors
 GREEN='\033[0;32m'
@@ -34,13 +56,31 @@ show_help() {
     echo "  ups-version string"
     echo "  ups-version freeze"
     echo "  ups-version debug     # Use this to troubleshoot +dirty issues"
+    echo ""
+    echo "Note: This script works both on host (from project directory)"
+    echo "      and inside Docker container."
 }
 
 # Check if we can access the version script
-if [ ! -f "$SCRIPT_DIR/version_info.py" ]; then
-    echo -e "${RED}Error: UPS Server version script not found at $SCRIPT_DIR/version_info.py${NC}" >&2
-    echo "Make sure UPS Server Docker is properly installed." >&2
+if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/version_info.py" ]; then
+    echo -e "${RED}Error: UPS Server version script not found${NC}" >&2
+    echo "Searched locations:" >&2
+    echo "  - /app/version_info.py (container)" >&2
+    echo "  - ./app/version_info.py (host project root)" >&2
+    echo "  - $(dirname $0)/../app/version_info.py (from scripts dir)" >&2
+    echo "" >&2
+    echo "Make sure you are running this from the project directory" >&2
+    echo "or that UPS Server Docker container is properly installed." >&2
     exit 1
+fi
+
+# Show environment info for debug
+if [ "$1" = "debug" ]; then
+    echo -e "${BLUE}🌍 Environment Detection:${NC}"
+    echo "Script directory: $SCRIPT_DIR"
+    echo "Python command: $PYTHON_CMD"
+    echo "Current working directory: $(pwd)"
+    echo ""
 fi
 
 # Default command is info
