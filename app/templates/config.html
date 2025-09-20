@@ -67,6 +67,24 @@
         </div>
         <div class="row">
             <div class="col-md-6 mb-3">
+                <label for="smtp_use_tls" class="form-label">Use STARTTLS</label>
+                <select class="form-select" id="smtp_use_tls" name="smtp_use_tls">
+                    <option value="auto" {% if pm_config.get('SMTP_USE_TLS', 'auto') == 'auto' %}selected{% endif %}>Auto (recommended)</option>
+                    <option value="true" {% if pm_config.get('SMTP_USE_TLS') == 'true' %}selected{% endif %}>Always use STARTTLS</option>
+                    <option value="false" {% if pm_config.get('SMTP_USE_TLS') == 'false' %}selected{% endif %}>Never use STARTTLS</option>
+                </select>
+                <div class="form-text">
+                    <strong>Auto:</strong> Use STARTTLS on all ports except 26<br>
+                    <strong>Always:</strong> Always attempt STARTTLS (except port 465)<br>
+                    <strong>Never:</strong> Never use STARTTLS (for unsupported servers)
+                </div>
+            </div>
+            <div class="col-md-6 mb-3">
+                <!-- Puste pole dla zachowania symetrii -->
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-3">
                 <label for="smtp_user" class="form-label">Username (optional)</label>
                 <input type="text" class="form-control" id="smtp_user" name="smtp_user" placeholder="user@example.com" value="{{ pm_config.get('SMTP_USER', '') }}">
             </div>

@@ -29,6 +29,7 @@ The Web GUI for UPS Server provides easy management of system configuration thro
 - **Power Outage Simulation**: A dedicated switch to manually enable or disable a simulated power outage, allowing for easy testing of the entire shutdown and recovery workflow.
 - **Scheduler Management:** Create, edit, and delete schedules to automate the start and stop of Power Outage Simulation.
 - **Email Notification Management:** Configure SMTP server settings and select precisely which events (power failures, client status changes, errors) should trigger an email alert.
+- **SMTP Configuration**: Configure email notifications with full control over STARTTLS usage for compatibility with various SMTP servers
 
 ![Configuration](/images/web-ui-config.png)
 
@@ -121,6 +122,7 @@ POWER_SIMULATION_MODE="false"
 # === SMTP NOTIFICATIONS ===
 SMTP_SERVER="smtp.example.com"
 SMTP_PORT="587"
+SMTP_USE_TLS="auto"
 SMTP_SENDER_NAME="My UPS Alert"
 SMTP_SENDER_EMAIL="ups@example.com"
 SMTP_RECIPIENTS="admin@example.com"
@@ -145,6 +147,11 @@ NAME=File Server
 IP=192.168.1.15
 MAC=00:11:32:aa:bb:cc
 ```
+
+The `SMTP_USE_TLS` option provides explicit control over STARTTLS usage:
+- `auto` (default): Uses STARTTLS on all ports except 26 (legacy behavior)
+- `true`: Always attempts STARTTLS (except on port 465 which uses SSL)  
+- `false`: Never uses STARTTLS (for servers that don't support it)
 
 ## Responsive Design and Mobile Optimization
 
@@ -206,6 +213,19 @@ The Web GUI is designed for accessibility across all devices:
 1.  Ensure you're using `network_mode: host` in docker-compose.yml
 2.  Check if `wakeonlan` is installed in the container
 3.  Verify MAC addresses and broadcast IP addresses are correct
+
+### SMTP/Email problems
+
+1. **"STARTTLS extension not supported by server" error:**
+   - Set `SMTP_USE_TLS` to `false` in the configuration
+   - Or use port 26 which automatically disables STARTTLS
+
+2. **Check SMTP logs:** Look for detailed SMTP connection logs in container output: `docker compose logs ups-server`
+
+3. **Test different SMTP_USE_TLS values:**
+   - `auto`: Legacy behavior (recommended for most users)
+   - `true`: Always use STARTTLS (except port 465)
+   - `false`: Never use STARTTLS (for servers that don't support it)
 
 ## Advanced Features
 

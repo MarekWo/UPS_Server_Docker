@@ -116,6 +116,7 @@ The logic is simple but effective:
           * `SMTP Settings`:
             - `SMTP_SERVER`
             - `SMTP_PORT`
+            - `SMTP_USE_TLS`
             - `SMTP_USERNAME`
             - `SMTP_PASSWORD`
             - `SMTP_SENDER_NAME`
@@ -187,6 +188,7 @@ DEFAULT_BROADCAST_IP=192.168.1.255
 # === SMTP NOTIFICATIONS ===
 SMTP_SERVER="smtp.example.com"
 SMTP_PORT="587"
+SMTP_USE_TLS="auto"
 SMTP_USER="user@example.com"
 SMTP_PASSWORD="your_password"
 SMTP_SENDER_NAME="UPS Server"
@@ -236,6 +238,11 @@ AUTO_WOL="false"
 # ACTION="start"
 # ENABLED="true"
 ```
+
+The `SMTP_USE_TLS` option provides explicit control over STARTTLS usage:
+- `auto` (default): Uses STARTTLS on all ports except 26 (legacy behavior)
+- `true`: Always attempts STARTTLS (except on port 465 which uses SSL)  
+- `false`: Never uses STARTTLS (for servers that don't support it)
 
 ## 🔌 Network Configuration for Wake-on-LAN (WoL)
 

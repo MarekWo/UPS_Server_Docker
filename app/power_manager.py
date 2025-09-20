@@ -226,6 +226,7 @@ class Notifier:
         sender_name = self.config.get('SMTP_SENDER_NAME', 'UPS Server')
         sender_email = self.config.get('SMTP_SENDER_EMAIL')
         recipients = [e.strip() for e in self.config.get('SMTP_RECIPIENTS', '').split(',') if e.strip()]
+        smtp_use_tls = self.config.get('SMTP_USE_TLS', 'auto').lower()  # New option
 
         if not all([smtp_server, sender_email, recipients]):
             raise ValueError("SMTP server, sender email, and recipients must be configured.")
@@ -238,10 +239,23 @@ class Notifier:
         server = None
         try:
             if smtp_port == 465:
+                # Port 465 always uses SSL/TLS
                 server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=10)
             else:
+                # For other ports, determine STARTTLS usage based on configuration
                 server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
-                if smtp_port != 26:
+                
+                # Determine whether to use STARTTLS
+                should_use_starttls = False
+                if smtp_use_tls == 'true':
+                    should_use_starttls = True
+                elif smtp_use_tls == 'false':
+                    should_use_starttls = False
+                elif smtp_use_tls == 'auto':
+                    # Auto mode: use legacy logic (don't use STARTTLS on port 26)
+                    should_use_starttls = smtp_port != 26
+                
+                if should_use_starttls:
                     server.starttls()
             
             if smtp_user and smtp_password:

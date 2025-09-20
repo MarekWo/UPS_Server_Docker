@@ -32,10 +32,17 @@ POWER_SIMULATION_MODE="false"
 # === SMTP NOTIFICATIONS ===
 # SMTP_SERVER="smtp.example.com"
 # SMTP_PORT="587"
+# SMTP_USE_TLS="auto"
 # SMTP_USER="user@example.com"
 # SMTP_PASSWORD="your_password"
-# SMTP_SENDER='"UPS Server" <ups@example.com>'
+# SMTP_SENDER_NAME="UPS Server"
+# SMTP_SENDER_EMAIL="ups@example.com"
 # SMTP_RECIPIENTS="admin@example.com,support@example.com"
+
+# SMTP_USE_TLS Options:
+# - "auto" (default): Use STARTTLS on all ports except 26 (legacy behavior)
+# - "true": Always attempt to use STARTTLS (except on port 465 which uses SSL)
+# - "false": Never use STARTTLS (for servers that don't support it)
 
 # === NOTIFICATION SETTINGS ===
 # Enable or disable notifications for specific events. Valid values: "true" or "false".
