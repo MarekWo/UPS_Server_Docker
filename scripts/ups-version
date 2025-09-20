@@ -12,6 +12,7 @@ PYTHON_CMD="python3"
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Help function
@@ -25,12 +26,14 @@ show_help() {
     echo "  string    Show just the version string"
     echo "  json      Output version information as JSON"
     echo "  freeze    Freeze current version to file"
+    echo "  debug     Debug git status (troubleshooting dirty flags)"
     echo "  help      Show this help message"
     echo ""
     echo "Examples:"
     echo "  ups-version info"
     echo "  ups-version string"
     echo "  ups-version freeze"
+    echo "  ups-version debug     # Use this to troubleshoot +dirty issues"
 }
 
 # Check if we can access the version script
@@ -55,6 +58,12 @@ case "$COMMAND" in
         ;;
     "freeze")
         cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py freeze
+        ;;
+    "debug")
+        echo -e "${YELLOW}🔍 Running Git status debug...${NC}"
+        echo "This will help troubleshoot why versions are marked as 'dirty'"
+        echo ""
+        cd "$SCRIPT_DIR" && $PYTHON_CMD version_info.py debug
         ;;
     "help"|"-h"|"--help")
         show_help

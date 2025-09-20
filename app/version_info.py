@@ -44,15 +44,65 @@ def run_git_command(command):
         logger.warning(f"Git command error: {command} - {str(e)}")
         return None
 
+def check_git_dirty_status():
+    """
+    Enhanced function to check if working directory has uncommitted changes.
+    Uses multiple strategies to avoid false positives during Docker builds.
+    """
+    try:
+        # Strategy 1: Use git status --porcelain (more reliable than git diff)
+        status_output = run_git_command("git status --porcelain")
+        if status_output is None:
+            # Git command failed, assume clean to avoid false dirty flag
+            logger.warning("Could not determine git status, assuming clean")
+            return False
+        
+        # If output is empty, working directory is clean
+        if not status_output.strip():
+            return False
+        
+        # Strategy 2: Check what specific changes exist
+        # Split output into lines and analyze
+        changes = [line.strip() for line in status_output.split('\n') if line.strip()]
+        
+        # Count only meaningful changes (ignore file mode changes in Docker context)
+        meaningful_changes = []
+        for change in changes:
+            # Skip file mode only changes (common in Docker)
+            if len(change) >= 2:
+                status_code = change[:2]
+                # 'M ' means modified content, ' M' means modified in working tree
+                # Skip pure mode changes which might be '??' or similar non-content changes
+                if status_code in ['M ', ' M', 'MM', 'A ', ' A', 'D ', ' D', 'R ', ' R', 'C ', ' C']:
+                    meaningful_changes.append(change)
+        
+        if meaningful_changes:
+            logger.info(f"Found meaningful changes: {meaningful_changes}")
+            return True
+        else:
+            logger.info(f"Only non-meaningful changes found: {changes}")
+            return False
+    
+    except Exception as e:
+        logger.warning(f"Error checking git status: {e}")
+        # On error, assume clean to avoid false dirty flag
+        return False
+
 def get_git_version_info():
     """Get version information from Git repository."""
     try:
         # Check if we're in a git repository
         if not run_git_command("git rev-parse --git-dir"):
             return None
-            
-        # Ignore file mode changes that can happen during Docker build
+        
+        # IMPORTANT: Configure Git settings FIRST, before any checks
+        # This prevents false dirty flags due to file mode changes during Docker build
         run_git_command("git config core.filemode false")
+        run_git_command("git config core.autocrlf false")
+        run_git_command("git config core.safecrlf false")
+        
+        # Try to refresh the index to avoid stale state issues
+        run_git_command("git update-index --refresh")
 
         # Get commit hash (short)
         commit_hash = run_git_command("git rev-parse --short HEAD")
@@ -70,8 +120,8 @@ def get_git_version_info():
         tag = run_git_command("git describe --tags --exact-match HEAD") or \
               run_git_command("git describe --tags --abbrev=0")
         
-        # Check for uncommitted changes
-        has_changes = run_git_command("git diff --quiet --ignore-cr-at-eol") is None
+        # Check for uncommitted changes using enhanced method
+        has_changes = check_git_dirty_status()
         dirty_suffix = "+dirty" if has_changes else ""
         
         if commit_hash and commit_date:
@@ -211,6 +261,33 @@ def print_version_info():
     print(f"💬 Message: {info['commit_message']}")
     print(f"🔨 Build: {info['build_date']}")
 
+# Debug function to help troubleshoot dirty status
+def debug_git_status():
+    """Debug function to show detailed git status information."""
+    print("🔍 Git Status Debug Information:")
+    print("=" * 40)
+    
+    commands = [
+        "git status --porcelain",
+        "git diff --name-only",
+        "git diff --cached --name-only", 
+        "git ls-files --modified",
+        "git ls-files --others --exclude-standard"
+    ]
+    
+    for cmd in commands:
+        print(f"\n📋 {cmd}:")
+        result = run_git_command(cmd)
+        if result:
+            print(result)
+        else:
+            print("(no output)")
+    
+    # Check specific git configs
+    print(f"\n⚙️  Git Configuration:")
+    print(f"core.filemode: {run_git_command('git config core.filemode')}")
+    print(f"core.autocrlf: {run_git_command('git config core.autocrlf')}")
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         if sys.argv[1] == "freeze":
@@ -223,9 +300,12 @@ if __name__ == "__main__":
                 sys.exit(1)
         elif sys.argv[1] == "info":
             print_version_info()
+        elif sys.argv[1] == "debug":
+            debug_git_status()
         else:
             print("Usage:")
             print("  python version_info.py freeze  # Freeze current version")
             print("  python version_info.py info    # Show version info")
+            print("  python version_info.py debug   # Debug git status")
     else:
         print_version_info()

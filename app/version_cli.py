@@ -16,7 +16,7 @@ import json
 sys.path.insert(0, '/app')
 
 try:
-    from version_info import get_version_info, freeze_version, print_version_info
+    from version_info import get_version_info, freeze_version, print_version_info, debug_git_status
 except ImportError:
     print("Error: version_info module not found", file=sys.stderr)
     sys.exit(1)
@@ -31,11 +31,12 @@ Examples:
   %(prog)s freeze        Freeze current version to file
   %(prog)s json          Output version as JSON
   %(prog)s string        Output just the version string
+  %(prog)s debug         Debug git status (troubleshooting)
         '''
     )
     
     parser.add_argument('command', 
-                       choices=['info', 'freeze', 'json', 'string'],
+                       choices=['info', 'freeze', 'json', 'string', 'debug'],
                        help='Command to execute')
     
     args = parser.parse_args()
@@ -59,6 +60,9 @@ Examples:
     elif args.command == 'string':
         version_info = get_version_info()
         print(version_info['version_string'])
+    
+    elif args.command == 'debug':
+        debug_git_status()
 
 if __name__ == '__main__':
     main()
