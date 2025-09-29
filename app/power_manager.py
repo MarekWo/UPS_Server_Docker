@@ -282,6 +282,7 @@ class PowerManager:
         self.notifier = Notifier(self.config)
         self.power_state = None
         self.power_state_timestamp = None
+        self.power_state_was_simulation = False
         self.client_notification_states = {}
 
     def _load_state(self):
@@ -294,10 +295,12 @@ class PowerManager:
                         if '=' in line:
                             try:
                                 key, value = line.split('=', 1)
-                                if key == 'STATE': 
+                                if key == 'STATE':
                                     self.power_state = value
-                                elif key == 'TIMESTAMP': 
+                                elif key == 'TIMESTAMP':
                                     self.power_state_timestamp = int(value)
+                                elif key == 'SIMULATION':
+                                    self.power_state_was_simulation = value.lower() == 'true'
                             except (ValueError, TypeError) as e:
                                 log.warning(f"Invalid state file line: {line} - {e}")
             except IOError as e:
@@ -324,6 +327,9 @@ class PowerManager:
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                 f.write(f"STATE={state}\n")
                 f.write(f"TIMESTAMP={int(datetime.now().timestamp())}\n")
+                # Save simulation mode status for restoration logic
+                is_simulation = self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true'
+                f.write(f"SIMULATION={str(is_simulation).lower()}\n")
         except IOError as e:
             log.error(f"Cannot save power state: {e}")
 
@@ -425,8 +431,19 @@ class PowerManager:
             log.warning("STATE CHANGE: Power failure detected!")
             self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
             self.client_notification_states = {}
-            self.notifier.send("POWER_FAIL", "[UPS] ALERT: Power Outage Detected", 
-                             "All sentinel hosts are offline. System is on UPS power.")
+
+            # Check if this is a real power failure or simulation
+            is_simulation = self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true'
+
+            if is_simulation:
+                # In simulation mode, send simulation notification instead of power fail
+                self.notifier.send("SIMULATION_MODE", "[UPS] INFO: Power Outage Simulation Active",
+                                 "Power outage simulation is active. UPS status set to 'On Battery, Low Battery' for testing.")
+            else:
+                # Real power failure - send regular power fail notification
+                self.notifier.send("POWER_FAIL", "[UPS] ALERT: Power Outage Detected",
+                                 "All sentinel hosts are offline. System is on UPS power.")
+
             self._save_power_state("POWER_FAIL")
         self._update_ups_status_file("ups.status: OB LB")
 
@@ -442,8 +459,16 @@ class PowerManager:
         if self.power_state == "POWER_FAIL":
             duration = (now_ts - self.power_state_timestamp) // 60 if self.power_state_timestamp else 0
             log.info("STATE CHANGE: Power restoration detected.")
-            self.notifier.send("POWER_RESTORED", "[UPS] INFO: Power Restored",
-                               f"Power restored after ~{duration} mins. Waiting {wol_delay} mins for WoL.")
+
+            if self.power_state_was_simulation:
+                # Previous state was simulation - send simulation stop notification
+                self.notifier.send("SIMULATION_MODE", "[UPS] INFO: Power Outage Simulation Stopped",
+                                 f"Power outage simulation ended after ~{duration} mins.")
+            else:
+                # Previous state was real power failure - send power restored notification
+                self.notifier.send("POWER_RESTORED", "[UPS] INFO: Power Restored",
+                                 f"Power restored after ~{duration} mins. Waiting {wol_delay} mins for WoL.")
+
             self._save_power_state("POWER_RESTORED")
 
         elif self.power_state == "POWER_RESTORED":
