@@ -278,8 +278,28 @@ def get_upsc_data():
         key, value = line.split(':', 1)
         flat_data[key.strip()] = parse_upsc_value(value.strip())
 
-    # 4. --- Convert to nested dictionary and return as JSON ---
+    # 4. --- Convert to nested dictionary ---
     nested_data = build_nested_dict(flat_data)
+
+    # 5. --- Add simulation mode information ---
+    try:
+        main_config, _ = read_power_manager_config()
+        simulation_mode = main_config.get('POWER_SIMULATION_MODE', 'false').lower()
+
+        # Add simulation parameter to the ups section
+        if 'ups' not in nested_data:
+            nested_data['ups'] = {}
+
+        # Convert "true"/"false" string to boolean for cleaner JSON
+        nested_data['ups']['simulation'] = simulation_mode == 'true'
+
+        app.logger.info(f"Added simulation mode to UPS status: {simulation_mode}")
+    except Exception as e:
+        app.logger.warning(f"Could not read simulation mode from config: {e}. Defaulting to false.")
+        if 'ups' not in nested_data:
+            nested_data['ups'] = {}
+        nested_data['ups']['simulation'] = False
+
     app.logger.info(f"Successfully retrieved and parsed UPS status.")
     return jsonify(nested_data)
 
