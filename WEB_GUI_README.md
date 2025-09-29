@@ -252,7 +252,7 @@ The API now includes endpoints for both configuration and status reporting.
 
   - `GET /config?ip=<client_ip>` - Returns UPS client configuration.
   - `POST /status` - Receives status updates from clients (e.g., shutdown countdown).
-  - `GET /upsc` - Returns live UPS status.
+  - `GET /upsc` - Returns live UPS status with simulation mode indicator.
 
 Example API response for a UPS client:
 

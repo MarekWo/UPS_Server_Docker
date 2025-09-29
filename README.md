@@ -388,7 +388,8 @@ This endpoint allows UPS clients to report their current status back to the serv
 
 This endpoint provides live status information from the NUT server, equivalent to running the `upsc` command locally, but with clean, nested JSON output.
 
-  * **Returns:** A nested JSON object containing all available UPS variables. This is ideal for monitoring dashboards or advanced client-side logic.
+  * **Returns:** A nested JSON object containing all available UPS variables, plus additional simulation status information. This is ideal for monitoring dashboards or advanced client-side logic.
+  * **Simulation Detection:** The response includes a `simulation` field in the `ups` section that indicates whether the current power outage status is real (`false`) or simulated (`true`).
 
 **Example Response:**
 
@@ -412,10 +413,19 @@ This endpoint provides live status information from the NUT server, equivalent t
   "ups": {
     "mfr": "Dummy Manufacturer",
     "model": "Dummy UPS",
-    "status": "OL"
+    "status": "OL",
+    "simulation": false
   }
 }
 ```
+
+**Simulation Status Field:**
+
+The `simulation` field in the `ups` section indicates the current power outage simulation status:
+- `false`: Normal operation - UPS status reflects real power conditions
+- `true`: Simulation mode active - UPS status is artificially set for testing purposes
+
+This field is read from the `POWER_SIMULATION_MODE` parameter in `power_manager.conf` and allows UPS clients to distinguish between real power outages and simulated ones for testing.
 
 -----
 
