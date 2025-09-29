@@ -283,6 +283,8 @@ class PowerManager:
         self.power_state = None
         self.power_state_timestamp = None
         self.power_state_was_simulation = False
+        self.simulation_interrupted = False
+        self.interrupted_schedule_info = None
         self.client_notification_states = {}
 
     def _load_state(self):
@@ -301,6 +303,10 @@ class PowerManager:
                                     self.power_state_timestamp = int(value)
                                 elif key == 'SIMULATION':
                                     self.power_state_was_simulation = value.lower() == 'true'
+                                elif key == 'SIM_INTERRUPTED':
+                                    self.simulation_interrupted = value.lower() == 'true'
+                                elif key == 'INTERRUPTED_SCHEDULE':
+                                    self.interrupted_schedule_info = json.loads(value) if value != 'null' else None
                             except (ValueError, TypeError) as e:
                                 log.warning(f"Invalid state file line: {line} - {e}")
             except IOError as e:
@@ -330,6 +336,9 @@ class PowerManager:
                 # Save simulation mode status for restoration logic
                 is_simulation = self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true'
                 f.write(f"SIMULATION={str(is_simulation).lower()}\n")
+                f.write(f"SIM_INTERRUPTED={str(self.simulation_interrupted).lower()}\n")
+                schedule_json = json.dumps(self.interrupted_schedule_info) if self.interrupted_schedule_info else 'null'
+                f.write(f"INTERRUPTED_SCHEDULE={schedule_json}\n")
         except IOError as e:
             log.error(f"Cannot save power state: {e}")
 
@@ -350,6 +359,61 @@ class PowerManager:
                 f.write(status_line + '\n')
         except IOError as e:
             log.error(f"Cannot update UPS status file: {e}")
+
+    def _should_simulation_be_active_now(self):
+        """Check if any schedule indicates simulation should be active at current time."""
+        now = datetime.now()
+
+        for section, params in self.schedules.items():
+            if params.get('ENABLED', 'false').lower() != 'true':
+                continue
+
+            schedule_type = params.get('TYPE', '').lower()
+            schedule_time = params.get('TIME', '')
+            action = params.get('ACTION', '').lower()
+
+            if action != 'start':  # Only check start schedules
+                continue
+
+            # For one-time schedules, check if today matches and time has passed
+            if schedule_type == 'one-time':
+                schedule_date = params.get('DATE', '')
+                if schedule_date == now.strftime('%Y-%m-%d'):
+                    if schedule_time <= now.strftime('%H:%M'):
+                        # Check if there's a corresponding stop schedule
+                        stop_time = self._find_corresponding_stop_schedule(section, schedule_date)
+                        if stop_time and now.strftime('%H:%M') < stop_time:
+                            return {'active': True, 'schedule': section, 'params': params, 'end_time': stop_time}
+
+            # For recurring schedules
+            elif schedule_type == 'recurring':
+                dow = params.get('DAY_OF_WEEK', '').lower()
+                if dow == 'everyday' or dow == now.strftime('%A').lower():
+                    if schedule_time <= now.strftime('%H:%M'):
+                        # For recurring, assume it runs until end of day unless stopped
+                        stop_time = self._find_corresponding_stop_schedule(section)
+                        end_time = stop_time if stop_time and stop_time > now.strftime('%H:%M') else '23:59'
+                        if now.strftime('%H:%M') < end_time:
+                            return {'active': True, 'schedule': section, 'params': params, 'end_time': end_time}
+
+        return {'active': False}
+
+    def _find_corresponding_stop_schedule(self, start_section, date=None):
+        """Find corresponding stop schedule for a start schedule."""
+        for section, params in self.schedules.items():
+            if (params.get('ENABLED', 'false').lower() == 'true' and
+                params.get('ACTION', '').lower() == 'stop'):
+
+                if date:  # One-time schedule
+                    if params.get('DATE') == date:
+                        return params.get('TIME')
+                else:  # Recurring schedule
+                    # Simple heuristic: find stop on same day type
+                    start_params = self.schedules.get(start_section, {})
+                    if (params.get('TYPE') == start_params.get('TYPE') and
+                        params.get('DAY_OF_WEEK') == start_params.get('DAY_OF_WEEK')):
+                        return params.get('TIME')
+        return None
 
     def _check_schedules(self):
         """Check and execute scheduled actions."""
@@ -390,23 +454,22 @@ class PowerManager:
                 break
 
     def _determine_power_status(self):
-        """Determine current power status with improved error handling - replicates original Bash logic."""
-        if self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true':
-            log.warning("Power Outage Simulation is active. Forcing OFFLINE.")
-            return "OFFLINE"
-        
+        """Determine current power status with improved error handling and simulation interruption detection."""
+        is_simulation_mode = self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true'
+
+        # Always check sentinel hosts to detect real power failures
         sentinel_hosts = self.config.get('SENTINEL_HOSTS', '').split()
-        if not sentinel_hosts: 
+        if not sentinel_hosts:
             log.warning("No sentinel hosts configured, assuming power is ONLINE")
             return "ONLINE"
 
         log.info(f"Pinging sentinel hosts: {' '.join(sentinel_hosts)}")
         online_hosts_count = 0
-        
+
         # Check ALL sentinel hosts (matching original Bash behavior)
         for ip in sentinel_hosts:
             try:
-                result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip], 
+                result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip],
                                       capture_output=True, timeout=3)
                 if result.returncode == 0:
                     log.info(f"  -> Sentinel host {ip} is online.")
@@ -415,10 +478,39 @@ class PowerManager:
                     log.info(f"  -> Sentinel host {ip} is offline.")
             except (subprocess.TimeoutExpired, OSError) as e:
                 log.warning(f"  -> Failed to ping sentinel host {ip}: {e}")
-        
+
         log.info(f"Found {online_hosts_count} online sentinel hosts.")
-        
-        if online_hosts_count == 0:
+
+        real_power_offline = online_hosts_count == 0
+
+        # Handle simulation mode interruption by real power failure
+        if is_simulation_mode and real_power_offline:
+            log.critical("REAL POWER FAILURE detected during simulation! Interrupting simulation mode.")
+
+            # Save information about interrupted simulation
+            sim_info = self._should_simulation_be_active_now()
+            if sim_info['active']:
+                self.simulation_interrupted = True
+                self.interrupted_schedule_info = {
+                    'schedule': sim_info['schedule'],
+                    'end_time': sim_info['end_time'],
+                    'interrupted_at': datetime.now().strftime('%Y-%m-%d %H:%M')
+                }
+                log.info(f"Saved interrupted simulation info: {self.interrupted_schedule_info}")
+
+            # Turn off simulation mode immediately
+            try:
+                save_setting_to_config('POWER_SIMULATION_MODE', 'false')
+                self.config['POWER_SIMULATION_MODE'] = 'false'  # Update local config
+                log.info("Simulation mode disabled due to real power failure.")
+            except Exception as e:
+                log.error(f"Failed to disable simulation mode: {e}")
+
+        # Return status based on real power conditions or simulation
+        if is_simulation_mode and not real_power_offline:
+            log.warning("Power Outage Simulation is active. Forcing OFFLINE.")
+            return "OFFLINE"
+        elif real_power_offline:
             log.warning("All sentinel hosts are offline. Power is OFF.")
             return "OFFLINE"
         else:
@@ -460,8 +552,35 @@ class PowerManager:
             duration = (now_ts - self.power_state_timestamp) // 60 if self.power_state_timestamp else 0
             log.info("STATE CHANGE: Power restoration detected.")
 
-            if self.power_state_was_simulation:
-                # Previous state was simulation - send simulation stop notification
+            # Handle simulation interruption restoration
+            if self.simulation_interrupted:
+                log.info("Handling restoration after interrupted simulation.")
+
+                # Check if we should restore simulation mode
+                if self.interrupted_schedule_info:
+                    current_time = datetime.now().strftime('%H:%M')
+                    end_time = self.interrupted_schedule_info.get('end_time', '23:59')
+
+                    if current_time < end_time:
+                        log.info(f"Restoring simulation mode until {end_time}")
+                        try:
+                            save_setting_to_config('POWER_SIMULATION_MODE', 'true')
+                            self.config['POWER_SIMULATION_MODE'] = 'true'  # Update local config
+                            self.notifier.send("SIMULATION_MODE", "[UPS] INFO: Simulation Restored After Power Failure",
+                                             f"Power restored during scheduled simulation window. Resuming simulation until {end_time}.")
+                        except Exception as e:
+                            log.error(f"Failed to restore simulation mode: {e}")
+                    else:
+                        log.info("Simulation window has ended, not restoring simulation mode.")
+                        self.notifier.send("POWER_RESTORED", "[UPS] INFO: Power Restored (Simulation Window Ended)",
+                                         f"Power restored after ~{duration} mins. Scheduled simulation window has ended.")
+
+                # Clear interruption flags
+                self.simulation_interrupted = False
+                self.interrupted_schedule_info = None
+
+            elif self.power_state_was_simulation:
+                # Previous state was regular simulation - send simulation stop notification
                 self.notifier.send("SIMULATION_MODE", "[UPS] INFO: Power Outage Simulation Stopped",
                                  f"Power outage simulation ended after ~{duration} mins.")
             else:
@@ -475,8 +594,12 @@ class PowerManager:
             if self.power_state_timestamp and (now_ts - self.power_state_timestamp) >= (wol_delay * 60):
                 log.info("WoL delay passed. Initiating wake-up sequence.")
                 self._initiate_wol()
+
+                # Clear all state files and reset interruption tracking
                 self._clear_file(STATE_FILE)
                 self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
+                self.simulation_interrupted = False
+                self.interrupted_schedule_info = None
 
     def _initiate_wol(self):
         """Initiate Wake-on-LAN sequence with comprehensive error handling and status tracking."""
@@ -624,14 +747,19 @@ class PowerManager:
         log.info("--- Power check initiated ---")
         try:
             self._load_state()
+
+            # Log current state for debugging
+            if self.simulation_interrupted:
+                log.debug(f"Simulation interruption active: {self.interrupted_schedule_info}")
+
             self._check_schedules()
             power_status = self._determine_power_status()
 
-            if power_status == "OFFLINE": 
+            if power_status == "OFFLINE":
                 self._handle_power_offline()
-            else: 
+            else:
                 self._handle_power_online()
-            
+
             self._check_client_statuses()
             
             # Save client notification states with file locking

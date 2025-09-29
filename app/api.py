@@ -353,7 +353,11 @@ def get_config():
         ups_name = get_ups_name()
         server_ip = get_server_ip()
         response_config['UPS_NAME'] = f"{ups_name}@{server_ip}"
-        
+
+        # Add ignore simulation setting
+        ignore_simulation = client_config.get('IGNORE_SIMULATION', 'false').lower()
+        response_config['IGNORE_SIMULATION'] = ignore_simulation == 'true'
+
         app.logger.info(f"Generated configuration for {client_ip}: {response_config}")
         return jsonify(response_config)
         

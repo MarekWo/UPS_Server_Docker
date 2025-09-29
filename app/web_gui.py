@@ -455,12 +455,12 @@ def add_wake_host():
     """Add new wake host"""
     try:
         pm_config, wake_hosts, schedules = read_power_manager_config()
-        
+
         # Find next available wake host number
         existing_numbers = [int(s.replace('WAKE_HOST_', '')) for s in wake_hosts.keys() if s.startswith('WAKE_HOST_')]
         next_num = max(existing_numbers) + 1 if existing_numbers else 1
         section_name = f"WAKE_HOST_{next_num}"
-        
+
         # Get form data and validate
         name = request.form.get('name', '').strip()
         ip = request.form.get('ip', '').strip()
@@ -468,6 +468,7 @@ def add_wake_host():
         broadcast_ip = request.form.get('broadcast_ip', '').strip()
         shutdown_delay = request.form.get('shutdown_delay', '').strip()
         auto_wol = 'true' if 'auto_wol' in request.form else 'false'
+        ignore_simulation = 'true' if 'ignore_simulation' in request.form else 'false'
         
         if not all([name, ip, mac]):
             flash('Name, IP, and MAC address are required', 'error')
@@ -483,7 +484,7 @@ def add_wake_host():
             return redirect(url_for('config'))
         
         # Add new wake host
-        wake_hosts[section_name] = {'NAME': name, 'IP': ip, 'MAC': mac, 'AUTO_WOL': auto_wol}
+        wake_hosts[section_name] = {'NAME': name, 'IP': ip, 'MAC': mac, 'AUTO_WOL': auto_wol, 'IGNORE_SIMULATION': ignore_simulation}
         if broadcast_ip:
             wake_hosts[section_name]['BROADCAST_IP'] = broadcast_ip
         if shutdown_delay:
@@ -514,6 +515,7 @@ def edit_wake_host(section):
         broadcast_ip = request.form.get('broadcast_ip', '').strip()
         shutdown_delay = request.form.get('shutdown_delay', '').strip()
         auto_wol = 'true' if 'auto_wol' in request.form else 'false'
+        ignore_simulation = 'true' if 'ignore_simulation' in request.form else 'false'
 
         if not all([name, ip, mac]):
             flash('Name, IP, and MAC address are required.', 'error')
@@ -533,6 +535,7 @@ def edit_wake_host(section):
         wake_hosts[section]['IP'] = ip
         wake_hosts[section]['MAC'] = mac
         wake_hosts[section]['AUTO_WOL'] = auto_wol
+        wake_hosts[section]['IGNORE_SIMULATION'] = ignore_simulation
         
         if broadcast_ip:
             wake_hosts[section]['BROADCAST_IP'] = broadcast_ip
