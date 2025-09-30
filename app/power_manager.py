@@ -369,12 +369,16 @@ class PowerManager:
             log.error(f"Cannot update UPS status file: {e}")
 
     def _should_simulation_be_active_now(self):
-        """Check if any schedule indicates simulation should be active at current time."""
+        """Check if any schedule indicates simulation should be active at current time.
+        NOTE: This function checks time windows regardless of ENABLED flag,
+        because one-time schedules are auto-disabled after execution.
+        """
         now = datetime.now()
 
         for section, params in self.schedules.items():
-            if params.get('ENABLED', 'false').lower() != 'true':
-                continue
+            # Note: We don't check ENABLED here because one-time schedules
+            # are automatically disabled after execution, but their time window
+            # is still active until the corresponding stop schedule.
 
             schedule_type = params.get('TYPE', '').lower()
             schedule_time = params.get('TIME', '')
@@ -407,10 +411,11 @@ class PowerManager:
         return {'active': False}
 
     def _find_corresponding_stop_schedule(self, start_section, date=None):
-        """Find corresponding stop schedule for a start schedule."""
+        """Find corresponding stop schedule for a start schedule.
+        NOTE: Does not check ENABLED flag for same reason as _should_simulation_be_active_now.
+        """
         for section, params in self.schedules.items():
-            if (params.get('ENABLED', 'false').lower() == 'true' and
-                params.get('ACTION', '').lower() == 'stop'):
+            if params.get('ACTION', '').lower() == 'stop':
 
                 if date:  # One-time schedule
                     if params.get('DATE') == date:
@@ -497,6 +502,7 @@ class PowerManager:
 
             # Save information about interrupted simulation
             sim_info = self._should_simulation_be_active_now()
+            log.debug(f"Simulation schedule check result: {sim_info}")
             if sim_info['active']:
                 self.simulation_interrupted = True
                 self.interrupted_schedule_info = {
@@ -504,7 +510,9 @@ class PowerManager:
                     'end_time': sim_info['end_time'],
                     'interrupted_at': datetime.now().strftime('%Y-%m-%d %H:%M')
                 }
-                log.info(f"Saved interrupted simulation info: {self.interrupted_schedule_info}")
+                log.info(f"Set simulation_interrupted=True, interrupted_schedule_info={self.interrupted_schedule_info}")
+            else:
+                log.warning("Simulation schedule check returned 'not active' - interruption flags NOT set!")
 
             # Turn off simulation mode immediately
             try:
@@ -531,6 +539,8 @@ class PowerManager:
         """Handle power offline state."""
         state_changed = self.power_state != "POWER_FAIL"
 
+        log.debug(f"_handle_power_offline: state_changed={state_changed}, simulation_interrupted={self.simulation_interrupted}, power_state={self.power_state}")
+
         if state_changed:
             log.warning("STATE CHANGE: Power failure detected!")
             self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
@@ -549,10 +559,15 @@ class PowerManager:
                                  "All sentinel hosts are offline. System is on UPS power.")
 
         # Always save state to persist interruption flags (even if state hasn't changed)
-        if state_changed or self.simulation_interrupted:
+        should_save = state_changed or self.simulation_interrupted
+        log.debug(f"Should save state: {should_save} (state_changed={state_changed}, simulation_interrupted={self.simulation_interrupted})")
+
+        if should_save:
             self._save_power_state("POWER_FAIL")
             if self.simulation_interrupted and not state_changed:
                 log.info("Saving state to persist simulation interruption flags.")
+            if self.simulation_interrupted:
+                log.info(f"State saved with interruption flags: interrupted={self.simulation_interrupted}, schedule_info={self.interrupted_schedule_info}")
 
         self._update_ups_status_file("ups.status: OB LB")
 
