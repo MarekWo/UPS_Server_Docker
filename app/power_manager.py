@@ -305,8 +305,16 @@ class PowerManager:
                                     self.power_state_was_simulation = value.lower() == 'true'
                                 elif key == 'SIM_INTERRUPTED':
                                     self.simulation_interrupted = value.lower() == 'true'
+                                    if self.simulation_interrupted:
+                                        log.info(f"Loaded simulation_interrupted flag: {self.simulation_interrupted}")
                                 elif key == 'INTERRUPTED_SCHEDULE':
-                                    self.interrupted_schedule_info = json.loads(value) if value != 'null' else None
+                                    try:
+                                        self.interrupted_schedule_info = json.loads(value) if value and value != 'null' else None
+                                        if self.interrupted_schedule_info:
+                                            log.info(f"Loaded interrupted_schedule_info: {self.interrupted_schedule_info}")
+                                    except json.JSONDecodeError as e:
+                                        log.error(f"Failed to parse INTERRUPTED_SCHEDULE JSON: {value} - {e}")
+                                        self.interrupted_schedule_info = None
                             except (ValueError, TypeError) as e:
                                 log.warning(f"Invalid state file line: {line} - {e}")
             except IOError as e:
@@ -506,6 +514,12 @@ class PowerManager:
             except Exception as e:
                 log.error(f"Failed to disable simulation mode: {e}")
 
+            # CRITICAL: Save state immediately to persist interruption info
+            # We need to save current power state to persist the interruption flags
+            if self.power_state:
+                self._save_power_state(self.power_state)
+                log.info("Saved power state with interruption flags to persist across runs.")
+
         # Return status based on real power conditions or simulation
         if is_simulation_mode and not real_power_offline:
             log.warning("Power Outage Simulation is active. Forcing OFFLINE.")
@@ -553,8 +567,10 @@ class PowerManager:
             log.info("STATE CHANGE: Power restoration detected.")
 
             # Handle simulation interruption restoration
+            log.debug(f"Checking interruption status: simulation_interrupted={self.simulation_interrupted}, power_state_was_simulation={self.power_state_was_simulation}")
+
             if self.simulation_interrupted:
-                log.info("Handling restoration after interrupted simulation.")
+                log.info(f"Handling restoration after interrupted simulation. Interrupted flag: {self.simulation_interrupted}, Schedule info: {self.interrupted_schedule_info}")
 
                 # Check if we should restore simulation mode
                 if self.interrupted_schedule_info:
