@@ -602,6 +602,9 @@ class PowerManager:
                             self.config['POWER_SIMULATION_MODE'] = 'true'  # Update local config
                             self.notifier.send("SIMULATION_MODE", "[UPS] INFO: Simulation Restored After Power Failure",
                                              f"Power restored during scheduled simulation window. Resuming simulation until {end_time}.")
+
+                            # Initiate WoL immediately after restoring simulation (for IGNORE_SIMULATION hosts)
+                            log.info(f"Waiting {wol_delay} mins before WoL after simulation restoration.")
                         except Exception as e:
                             log.error(f"Failed to restore simulation mode: {e}")
                     else:
@@ -609,9 +612,11 @@ class PowerManager:
                         self.notifier.send("POWER_RESTORED", "[UPS] INFO: Power Restored (Simulation Window Ended)",
                                          f"Power restored after ~{duration} mins. Scheduled simulation window has ended.")
 
-                # Clear interruption flags
-                self.simulation_interrupted = False
-                self.interrupted_schedule_info = None
+                # Clear interruption flags - but keep them if we restored simulation
+                # (they will be cleared after WoL completes)
+                if self.config.get('POWER_SIMULATION_MODE', 'false').lower() != 'true':
+                    self.simulation_interrupted = False
+                    self.interrupted_schedule_info = None
 
             elif self.power_state_was_simulation:
                 # Previous state was regular simulation - send simulation stop notification
@@ -622,7 +627,12 @@ class PowerManager:
                 self.notifier.send("POWER_RESTORED", "[UPS] INFO: Power Restored",
                                  f"Power restored after ~{duration} mins. Waiting {wol_delay} mins for WoL.")
 
-            self._save_power_state("POWER_RESTORED")
+            # Save state - use special state if we restored simulation mode
+            if self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true' and self.simulation_interrupted:
+                self._save_power_state("POWER_RESTORED_SIM")
+                log.debug("Saved state as POWER_RESTORED_SIM (simulation restored after interruption)")
+            else:
+                self._save_power_state("POWER_RESTORED")
 
         elif self.power_state == "POWER_RESTORED":
             if self.power_state_timestamp and (now_ts - self.power_state_timestamp) >= (wol_delay * 60):
@@ -634,6 +644,19 @@ class PowerManager:
                 self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
                 self.simulation_interrupted = False
                 self.interrupted_schedule_info = None
+
+        elif self.power_state == "POWER_RESTORED_SIM":
+            # Special state: power was restored and simulation was re-activated
+            # We need to wait for WoL delay even though we're currently in simulation mode
+            if self.power_state_timestamp and (now_ts - self.power_state_timestamp) >= (wol_delay * 60):
+                log.info("WoL delay passed after simulation restoration. Initiating wake-up sequence.")
+                self._initiate_wol()
+
+                # Clear interruption flags now that WoL is done
+                self.simulation_interrupted = False
+                self.interrupted_schedule_info = None
+                self._clear_file(STATE_FILE)
+                self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
 
     def _initiate_wol(self):
         """Initiate Wake-on-LAN sequence with comprehensive error handling and status tracking."""
@@ -801,7 +824,12 @@ class PowerManager:
             self._check_schedules()
             power_status = self._determine_power_status()
 
-            if power_status == "OFFLINE":
+            # Special handling for POWER_RESTORED_SIM state:
+            # Even if power_status is OFFLINE (due to simulation), we need to handle WoL
+            if self.power_state == "POWER_RESTORED_SIM":
+                log.debug("Current state is POWER_RESTORED_SIM - handling WoL logic despite power_status")
+                self._handle_power_online()  # This handles the POWER_RESTORED_SIM state
+            elif power_status == "OFFLINE":
                 self._handle_power_offline()
             else:
                 self._handle_power_online()
