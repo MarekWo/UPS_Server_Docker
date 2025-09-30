@@ -514,11 +514,7 @@ class PowerManager:
             except Exception as e:
                 log.error(f"Failed to disable simulation mode: {e}")
 
-            # CRITICAL: Save state immediately to persist interruption info
-            # We need to save current power state to persist the interruption flags
-            if self.power_state:
-                self._save_power_state(self.power_state)
-                log.info("Saved power state with interruption flags to persist across runs.")
+            # Note: State will be saved in _handle_power_offline() with interruption flags preserved
 
         # Return status based on real power conditions or simulation
         if is_simulation_mode and not real_power_offline:
@@ -533,7 +529,9 @@ class PowerManager:
 
     def _handle_power_offline(self):
         """Handle power offline state."""
-        if self.power_state != "POWER_FAIL":
+        state_changed = self.power_state != "POWER_FAIL"
+
+        if state_changed:
             log.warning("STATE CHANGE: Power failure detected!")
             self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
             self.client_notification_states = {}
@@ -550,7 +548,12 @@ class PowerManager:
                 self.notifier.send("POWER_FAIL", "[UPS] ALERT: Power Outage Detected",
                                  "All sentinel hosts are offline. System is on UPS power.")
 
+        # Always save state to persist interruption flags (even if state hasn't changed)
+        if state_changed or self.simulation_interrupted:
             self._save_power_state("POWER_FAIL")
+            if self.simulation_interrupted and not state_changed:
+                log.info("Saving state to persist simulation interruption flags.")
+
         self._update_ups_status_file("ups.status: OB LB")
 
     def _handle_power_online(self):
@@ -622,12 +625,24 @@ class PowerManager:
         default_broadcast = self.config.get('DEFAULT_BROADCAST_IP')
         woken_hosts = []
 
+        # Check if we're currently in simulation mode
+        is_simulation_active = self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true'
+        if is_simulation_active:
+            log.info("Simulation mode is active - will only wake hosts with IGNORE_SIMULATION=true")
+
         for section, params in self.wake_hosts.items():
-            if params.get('AUTO_WOL', 'true').lower() == 'false': 
+            if params.get('AUTO_WOL', 'true').lower() == 'false':
                 continue
-                
+
+            # If simulation is active, only wake hosts that ignore simulation
+            if is_simulation_active:
+                ignore_simulation = params.get('IGNORE_SIMULATION', 'false').lower() == 'true'
+                if not ignore_simulation:
+                    log.info(f"Skipping WoL for {params.get('NAME', 'unknown')} ({params.get('IP')}) - simulation mode active and host does not ignore simulation")
+                    continue
+
             ip, mac = params.get('IP'), params.get('MAC')
-            if not ip or not mac: 
+            if not ip or not mac:
                 log.warning(f"Skipping WoL for {params.get('NAME', 'unknown')} - missing IP or MAC")
                 continue
 
