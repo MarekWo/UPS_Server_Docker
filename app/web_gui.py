@@ -113,8 +113,8 @@ def write_power_manager_config(config, wake_hosts, schedules):
         
         # Main config keys order
         main_keys = [
-            'SENTINEL_HOSTS', 'WOL_DELAY_MINUTES', 'CLIENT_STALE_TIMEOUT_MINUTES', 
-            'UPS_STATE_FILE', 'DEFAULT_BROADCAST_IP', 'API_TOKEN', 'POWER_SIMULATION_MODE'
+            'SENTINEL_HOSTS', 'WOL_DELAY_MINUTES', 'CLIENT_STALE_TIMEOUT_MINUTES',
+            'UPS_STATE_FILE', 'DEFAULT_BROADCAST_IP', 'API_TOKEN', 'POWER_SIMULATION_MODE', 'DEBUG_MODE'
         ]
         
         # Write main configuration
