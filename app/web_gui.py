@@ -375,6 +375,7 @@ def save_main_config():
         pm_config['CLIENT_STALE_TIMEOUT_MINUTES'] = request.form.get('client_stale_timeout_minutes', '5')
         pm_config['DEFAULT_BROADCAST_IP'] = request.form.get('default_broadcast_ip', '192.168.1.255')
         pm_config['POWER_SIMULATION_MODE'] = 'true' if 'power_simulation_mode' in request.form else 'false'
+        pm_config['DEBUG_MODE'] = 'true' if 'debug_mode' in request.form else 'false'
         if 'UPS_STATE_FILE' not in pm_config:
             pm_config['UPS_STATE_FILE'] = request.form.get('ups_state_file', '/var/run/nut/virtual.device')
 

@@ -28,15 +28,16 @@ PING_CMD = "/bin/ping"
 WAKEONLAN_CMD = "/usr/bin/wakeonlan"
 
 # --- Logger Setup ---
-def setup_logging():
-    """Configures logging to file and syslog."""
+def setup_logging(debug_mode=False):
+    """Configures logging to file and syslog with optional debug level."""
     logger = logging.getLogger(APP_NAME)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG if debug_mode else logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', '%Y-%m-%d %H:%M:%S')
 
     # File handler for detailed logs
     try:
         file_handler = logging.FileHandler(LOG_FILE)
+        file_handler.setLevel(logging.DEBUG if debug_mode else logging.INFO)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     except IOError as e:
@@ -54,6 +55,7 @@ def setup_logging():
 
     return logger
 
+# Initial logger setup (will be reconfigured after reading config)
 log = setup_logging()
 
 # --- Core Classes ---
@@ -273,12 +275,22 @@ class Notifier:
 class PowerManager:
     """Main application logic with improved error handling and file locking."""
     def __init__(self):
+        global log
         try:
             self.config, self.wake_hosts, self.schedules = read_power_manager_config()
         except (FileNotFoundError, IOError) as e:
             log.error(f"CRITICAL ERROR: {e}. Exiting.")
             sys.exit(1)
-        
+
+        # Reconfigure logger based on DEBUG_MODE setting
+        debug_mode = self.config.get('DEBUG_MODE', 'false').lower() == 'true'
+        if debug_mode:
+            # Clear existing handlers and reconfigure with debug mode
+            logger = logging.getLogger(APP_NAME)
+            logger.handlers.clear()
+            log = setup_logging(debug_mode=True)
+            log.info("Debug mode enabled via configuration")
+
         self.notifier = Notifier(self.config)
         self.power_state = None
         self.power_state_timestamp = None
@@ -306,12 +318,12 @@ class PowerManager:
                                 elif key == 'SIM_INTERRUPTED':
                                     self.simulation_interrupted = value.lower() == 'true'
                                     if self.simulation_interrupted:
-                                        log.info(f"Loaded simulation_interrupted flag: {self.simulation_interrupted}")
+                                        log.debug(f"Loaded simulation_interrupted flag: {self.simulation_interrupted}")
                                 elif key == 'INTERRUPTED_SCHEDULE':
                                     try:
                                         self.interrupted_schedule_info = json.loads(value) if value and value != 'null' else None
                                         if self.interrupted_schedule_info:
-                                            log.info(f"Loaded interrupted_schedule_info: {self.interrupted_schedule_info}")
+                                            log.debug(f"Loaded interrupted_schedule_info: {self.interrupted_schedule_info}")
                                     except json.JSONDecodeError as e:
                                         log.error(f"Failed to parse INTERRUPTED_SCHEDULE JSON: {value} - {e}")
                                         self.interrupted_schedule_info = None
@@ -510,7 +522,7 @@ class PowerManager:
                     'end_time': sim_info['end_time'],
                     'interrupted_at': datetime.now().strftime('%Y-%m-%d %H:%M')
                 }
-                log.info(f"Set simulation_interrupted=True, interrupted_schedule_info={self.interrupted_schedule_info}")
+                log.debug(f"Set simulation_interrupted=True, interrupted_schedule_info={self.interrupted_schedule_info}")
             else:
                 log.warning("Simulation schedule check returned 'not active' - interruption flags NOT set!")
 
@@ -565,9 +577,9 @@ class PowerManager:
         if should_save:
             self._save_power_state("POWER_FAIL")
             if self.simulation_interrupted and not state_changed:
-                log.info("Saving state to persist simulation interruption flags.")
+                log.debug("Saving state to persist simulation interruption flags.")
             if self.simulation_interrupted:
-                log.info(f"State saved with interruption flags: interrupted={self.simulation_interrupted}, schedule_info={self.interrupted_schedule_info}")
+                log.debug(f"State saved with interruption flags: interrupted={self.simulation_interrupted}, schedule_info={self.interrupted_schedule_info}")
 
         self._update_ups_status_file("ups.status: OB LB")
 
@@ -588,7 +600,7 @@ class PowerManager:
             log.debug(f"Checking interruption status: simulation_interrupted={self.simulation_interrupted}, power_state_was_simulation={self.power_state_was_simulation}")
 
             if self.simulation_interrupted:
-                log.info(f"Handling restoration after interrupted simulation. Interrupted flag: {self.simulation_interrupted}, Schedule info: {self.interrupted_schedule_info}")
+                log.debug(f"Handling restoration after interrupted simulation. Interrupted flag: {self.simulation_interrupted}, Schedule info: {self.interrupted_schedule_info}")
 
                 # Check if we should restore simulation mode
                 if self.interrupted_schedule_info:
