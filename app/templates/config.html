@@ -281,8 +281,8 @@
         </button>
     </h4>
     {% if schedules %}
-        <div class="table-responsive">
-            <table class="table table-hover">
+        <div class="table-responsive d-none d-lg-block">
+            <table class="table table-hover mobile-table">
                 <thead>
                     <tr>
                         <th>Name</th>
@@ -335,6 +335,64 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+
+        <div class="mobile-cards d-block d-lg-none">
+            {% for section, schedule in schedules.items() %}
+            <div class="mobile-card">
+                <div class="mobile-card-header">{{ schedule.get('NAME', section) }}</div>
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label">Type:</span>
+                    <span class="mobile-card-value">{{ schedule.get('TYPE', 'One-time') | capitalize }}</span>
+                </div>
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label">
+                        {% if schedule.get('TYPE') == 'recurring' %}Day:{% else %}Date:{% endif %}
+                    </span>
+                    <span class="mobile-card-value">
+                        {% if schedule.get('TYPE') == 'recurring' %}
+                            {{ schedule.get('DAY_OF_WEEK') | capitalize }}
+                        {% else %}
+                            {{ schedule.get('DATE') }}
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label">Time:</span>
+                    <span class="mobile-card-value"><code>{{ schedule.get('TIME') }}</code></span>
+                </div>
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label">Action:</span>
+                    <span class="mobile-card-value">
+                        {% if schedule.get('ACTION') == 'start' %}
+                            <span class="badge bg-danger">Start Simulation</span>
+                        {% else %}
+                            <span class="badge bg-success">Stop Simulation</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="mobile-card-row">
+                    <span class="mobile-card-label">Enabled:</span>
+                    <span class="mobile-card-value">
+                        {% if schedule.get('ENABLED') == 'true' %}
+                            <span class="badge bg-success">Yes</span>
+                        {% else %}
+                            <span class="badge bg-secondary">No</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="mobile-card-actions">
+                    <button type="button" class="btn btn-warning btn-sm me-2" onclick="editSchedule('{{ section }}')" title="Edit">
+                        <i class="fas fa-edit me-1"></i> Edit
+                    </button>
+                    <form method="POST" action="{{ url_for('delete_schedule', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete schedule {{ schedule.get('NAME', section) }}?')">
+                        <button type="submit" class="btn btn-danger btn-sm" title="Delete">
+                            <i class="fas fa-trash me-1"></i> Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
         </div>
     {% else %}
         <div class="text-center text-muted py-4">
