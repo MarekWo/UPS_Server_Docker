@@ -270,8 +270,11 @@
                     Powered by <a href="https://github.com/MarekWo/UPS_Server_Docker" target="_blank" class="text-decoration-none">UPS Server</a>
                     {% if version_info %}
                         - {{ version_info.version_string }}
+                        {% if version_info.branch and version_info.branch != 'unknown' %}
+                            ({{ version_info.branch }})
+                        {% endif %}
                         {% if version_info.source == 'git' %}
-                            <i class="fas fa-code-branch ms-2" title="Branch: {{ version_info.branch }}"></i>
+                            <i class="fas fa-code-branch ms-2" title="Git repository"></i>
                         {% elif version_info.source == 'file' %}
                             <i class="fas fa-archive ms-2" title="Frozen build"></i>
                         {% else %}
