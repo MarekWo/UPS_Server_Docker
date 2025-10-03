@@ -53,51 +53,50 @@ The following files contain your server configuration and must be transferred:
 
 1. **Install required dependencies:**
    ```bash
-   apt-get update && apt-get install -y docker docker-compose git curl
+   apt-get update && apt-get install -y git curl
    ```
+
+   For installing Docker and Docker Compose see this Wiki instruction: [How to Install Docker Engine on Debian](https://wiki.wojtaszek.it/pl/home/apps/docker/installation)
+
 
 2. **Clone the repository:**
    ```bash
-   git clone https://github.com/MarekWo/UPS_Server_Docker.git /opt/ups-server-docker
-   cd /opt/ups-server-docker
+   sudo git clone https://github.com/MarekWo/UPS_Server_Docker.git /opt/ups-server-docker && \
+      cd /opt/ups-server-docker
    ```
 
 ### Phase 2: Transfer Configuration from Server A
 
 3. **Copy configuration files from Server A to Server B:**
 
-   Option A - Using SCP (recommended):
+   Option A - Using tar over SSH (recommended - single password prompt):
    ```bash
-   # From Server B, copy files from Server A
-   scp user@serverA:/opt/ups-server-docker/config/power_manager.conf /opt/ups-server-docker/config/
-   scp user@serverA:/opt/ups-server-docker/.env /opt/ups-server-docker/
-   scp user@serverA:/opt/ups-server-docker/config/nut.conf /opt/ups-server-docker/config/
-   scp user@serverA:/opt/ups-server-docker/config/ups.conf /opt/ups-server-docker/config/
-   scp user@serverA:/opt/ups-server-docker/config/upsd.conf /opt/ups-server-docker/config/
-   scp user@serverA:/opt/ups-server-docker/config/upsd.users /opt/ups-server-docker/config/
-   scp user@serverA:/opt/ups-server-docker/docker-compose.yml /opt/ups-server-docker/
-   scp -r user@serverA:/opt/ups-server-docker/rsyslog/ /opt/ups-server-docker/
+   # From Server B, stream tar archive directly from Server A
+   ssh user@serverA 'cd /opt/ups-server-docker && tar -czf - config/ .env docker-compose.yml rsyslog/' | \
+   sudo tar -xzf - -C /opt/ups-server-docker/
    ```
+   This method requires entering the password only once and is the most efficient. Files are automatically extracted to the correct directories.
 
-   Option B - Manual backup and restore:
+   Option B - Manual backup and restore (requires intermediate file):
    ```bash
    # On Server A: Create backup archive
    cd /opt/ups-server-docker
-   tar -czf ups-server-config-backup.tar.gz config/ .env docker-compose.yml rsyslog/
+   sudo tar -czf ups-server-config-backup.tar.gz config/ .env docker-compose.yml rsyslog/
 
-   # Transfer the archive to Server B
-   scp ups-server-config-backup.tar.gz user@serverB:/tmp/
+   # Transfer the archive to Server B (you'll be prompted for password)
+   sudo scp ups-server-config-backup.tar.gz user@serverB:/tmp/
 
    # On Server B: Extract the archive
    cd /opt/ups-server-docker
-   tar -xzf /tmp/ups-server-config-backup.tar.gz
+   sudo tar -xzf /tmp/ups-server-config-backup.tar.gz
    ```
+   This method creates an intermediate backup file, which can be useful for archival purposes.
 
 ### Phase 3: Update Configuration on Server B
 
 4. **🔴 CRITICAL: Update the server IP address in `.env` file:**
    ```bash
-   nano /opt/ups-server-docker/.env
+   sudo nano /opt/ups-server-docker/.env
    ```
    Change `UPS_SERVER_HOST_IP` to the IP address of Server B.
 
@@ -109,7 +108,7 @@ The following files contain your server configuration and must be transferred:
 
 5. **Review and update network settings in `power_manager.conf` (if network subnet changed):**
    ```bash
-   nano /opt/ups-server-docker/config/power_manager.conf
+   sudo nano /opt/ups-server-docker/config/power_manager.conf
    ```
    Check and update if necessary:
    - `DEFAULT_BROADCAST_IP` - Default broadcast address for Wake-on-LAN
@@ -118,10 +117,14 @@ The following files contain your server configuration and must be transferred:
 
 6. **Verify port availability on Server B:**
    ```bash
-   # Check if required ports are free
+   # Option 1: Using ss (modern, usually pre-installed)
+   ss -tuln | grep -E ':(80|3493|5000) '
+
+   # Option 2: Using netstat (requires net-tools package)
+   # Install if needed: sudo apt-get install net-tools
    netstat -tuln | grep -E ':(80|3493|5000) '
    ```
-   The following ports must be available:
+   If the command returns no output, the ports are free. The following ports must be available:
    - Port 80 - Web GUI
    - Port 3493 - NUT server
    - Port 5000 - REST API
@@ -152,11 +155,11 @@ The following files contain your server configuration and must be transferred:
     If you're using the [UPS_monitor](https://github.com/MarekWo/UPS_monitor) client script, update the configuration on each client machine:
 
     ```bash
-    nano /path/to/ups_monitor.conf
+    sudo nano /opt/ups-monitor/ups.env
     ```
     Update the `UPS_NAME` parameter to use Server B's IP address:
     ```bash
-    UPS_NAME=ups@192.168.1.20  # New Server B IP
+    API_SERVER_URI="http://192.168.1.20:5000" # New Server B IP    
     ```
 
 ### Phase 6: Verification and Testing
