@@ -6,6 +6,8 @@ A complete, containerized solution for managing graceful shutdowns for UPS-prote
 
 ## About This Project
 
+[![▶️ Play Podcast about UPS Server](https://img.shields.io/badge/Play_Podcast-FF0000?style=for-the-badge&logo=googlepodcasts&logoColor=white)](https://share.wojtaszek.it/u/UPS_Server_Podcast.mp3)
+
 Many powerful, cost-effective UPS systems (like sine wave inverters with large external batteries) can power a server rack for hours but offer no way to signal a power failure to the connected devices. This project solves that problem by using a "canary in a coal mine" approach: it monitors several always-on devices (**sentinel hosts**) that are connected to standard, non-UPS grid power. If all of them go offline simultaneously, the application declares a power failure.
 
 This container acts as the "brain" for a virtual NUT server, allowing standard NUT clients to perform a graceful shutdown. It also provides a central API to manage shutdown configurations for all clients and a modern web interface for easy administration.
@@ -538,6 +540,8 @@ To ensure that ideas are well-discussed and bugs are properly triaged, this proj
 
 This process helps keep the official issue tracker clean and focused on actionable items. Thank you for your understanding and cooperation!
 
+## 🎬 BONUS: See the UPS Server Presentation on YouTube
+[![See the video on YouTube](https://share.wojtaszek.it/u/UPS_Server_Presentation_small.jpg)](https://www.youtube.com/watch?v=36lsUyeTVpw)
 
 -----
 
