@@ -83,6 +83,19 @@ The logic is simple but effective:
   * A few reliable, always-on devices with static IPs on your network that are **NOT** connected to the UPS to act as sentinels.
   * `curl`, `git` packages installed on the host.
 
+#### Important Note on Docker DNS Resolution (Workaround for recent Docker bug)
+
+A recent Docker bug can cause DNS resolution to fail inside containers, potentially affecting features like email notifications. To mitigate this, a `dns` section has been added to `docker-compose.yml.example` with fallback public DNS servers.
+
+If you wish to use custom DNS servers, you can configure them in your `.env` file:
+
+```
+DNS1=192.168.131.152
+DNS2=192.168.131.153
+```
+
+Without this configuration, features relying on external network resolution (e.g., sending emails) might cease to function.
+
 
 -----
 

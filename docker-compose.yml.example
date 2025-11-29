@@ -16,6 +16,9 @@ services:
      # Use the host's network stack directly.
      # this is necessary for the WoL (wake on lan) to work.
     network_mode: host 
+    dns: 
+        - ${DNS1:-1.1.1.1} 
+        - ${DNS2:-8.8.8.8}
 
     environment:
       # Set the timezone for the container from the .env file.
