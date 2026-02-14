@@ -102,7 +102,7 @@ All system configuration is now managed through a single file: `power_manager.co
       - `IP`: Host IP address
       - `MAC`: MAC address for Wake-on-LAN
       - `BROADCAST_IP`: Optional specific broadcast IP
-      - `SHUTDOWN_DELAY_MINUTES`: Optional - makes host a UPS client
+      - `SHUTDOWN_DELAY_MINUTES`: Optional - makes host a UPS client (use `0` for immediate shutdown)
       - `AUTO_WOL`: Optional - set to "false" to disable automatic WoL
 
   - **Schedule Definitions**: Each `[SCHEDULE_X]` section defines a one-time or recurring job to enable or disable the simulation mode.

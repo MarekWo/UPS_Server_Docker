@@ -200,8 +200,12 @@
                         <td><code>{{ host.get('MAC', '') }}</code></td>
                         <td><code>{{ host.get('BROADCAST_IP', pm_config.get('DEFAULT_BROADCAST_IP', '')) }}</code></td>
                         <td>
-                            {% if host.get('SHUTDOWN_DELAY_MINUTES') %}
-                                <span class="badge bg-success">{{ host.get('SHUTDOWN_DELAY_MINUTES') }} min</span>
+                            {% if host.get('SHUTDOWN_DELAY_MINUTES') is not none and host.get('SHUTDOWN_DELAY_MINUTES') != '' %}
+                                {% if host.get('SHUTDOWN_DELAY_MINUTES') == '0' %}
+                                    <span class="badge bg-danger">Immediate</span>
+                                {% else %}
+                                    <span class="badge bg-success">{{ host.get('SHUTDOWN_DELAY_MINUTES') }} min</span>
+                                {% endif %}
                             {% else %}
                                 <span class="badge bg-secondary">None</span>
                             {% endif %}
@@ -241,8 +245,12 @@
                 <div class="mobile-card-row">
                     <span class="mobile-card-label">UPS Delay:</span>
                     <span class="mobile-card-value">
-                        {% if host.get('SHUTDOWN_DELAY_MINUTES') %}
-                            <span class="badge bg-success">{{ host.get('SHUTDOWN_DELAY_MINUTES') }} min</span>
+                        {% if host.get('SHUTDOWN_DELAY_MINUTES') is not none and host.get('SHUTDOWN_DELAY_MINUTES') != '' %}
+                            {% if host.get('SHUTDOWN_DELAY_MINUTES') == '0' %}
+                                <span class="badge bg-danger">Immediate</span>
+                            {% else %}
+                                <span class="badge bg-success">{{ host.get('SHUTDOWN_DELAY_MINUTES') }} min</span>
+                            {% endif %}
                         {% else %}
                             <span class="badge bg-secondary">None</span>
                         {% endif %}
@@ -435,8 +443,8 @@
                     </div>
                     <div class="mb-3">
                         <label for="add_shutdown_delay" class="form-label">UPS Shutdown Delay (minutes, optional)</label>
-                        <input type="number" class="form-control" id="add_shutdown_delay" name="shutdown_delay" min="1" max="60" placeholder="5">
-                        <div class="form-text">If set, host will be a UPS client with specified shutdown delay.</div>
+                        <input type="number" class="form-control" id="add_shutdown_delay" name="shutdown_delay" min="0" max="60" placeholder="5">
+                        <div class="form-text">If set, host will be a UPS client with specified shutdown delay. Use 0 for immediate shutdown.</div>
                     </div>
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" id="add_auto_wol" name="auto_wol" value="true" checked>
@@ -485,8 +493,8 @@
                     </div>
                     <div class="mb-3">
                         <label for="edit_shutdown_delay" class="form-label">UPS Shutdown Delay (minutes, optional)</label>
-                        <input type="number" class="form-control" id="edit_shutdown_delay" name="shutdown_delay" min="1" max="60">
-                        <div class="form-text">If set, host will be a UPS client with specified shutdown delay.</div>
+                        <input type="number" class="form-control" id="edit_shutdown_delay" name="shutdown_delay" min="0" max="60">
+                        <div class="form-text">If set, host will be a UPS client with specified shutdown delay. Use 0 for immediate shutdown.</div>
                     </div>
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" id="edit_auto_wol" name="auto_wol" value="true">

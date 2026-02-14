@@ -8,6 +8,7 @@ import json
 import logging
 import logging.handlers
 import fcntl
+import time
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
@@ -22,6 +23,11 @@ NOTIFICATION_STATE_FILE = "/var/run/nut/notification.state"
 CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
 CLIENT_NOTIFICATION_STATE_FILE = "/var/run/nut/client_notification.state"
 UPS_STATE_FILE_DEFAULT = "/var/run/nut/virtual.device"
+LOCK_FILE = "/var/run/nut/power_manager.lock"
+
+# Sub-minute polling: 4 iterations x 15 seconds = 60 seconds per cron cycle
+CHECK_ITERATIONS = 4
+CHECK_INTERVAL_SECONDS = 15
 
 # Commands
 PING_CMD = "/bin/ping"
@@ -823,9 +829,14 @@ class PowerManager:
             except (ValueError, TypeError) as e:
                 log.warning(f"Invalid timestamp format for client {ip}: {timestamp_str} - {e}")
 
-    def run(self):
-        """Main execution method with comprehensive error handling."""
-        log.info("--- Power check initiated ---")
+    def run(self, iteration=0):
+        """Main execution method with comprehensive error handling.
+
+        Args:
+            iteration: Current iteration number (0-3). Schedule checking
+                      only runs on iteration 0 to avoid duplicate triggers.
+        """
+        log.info(f"--- Power check initiated (iteration {iteration + 1}/{CHECK_ITERATIONS}) ---")
         try:
             self._load_state()
 
@@ -833,7 +844,9 @@ class PowerManager:
             if self.simulation_interrupted:
                 log.debug(f"Simulation interruption active: {self.interrupted_schedule_info}")
 
-            self._check_schedules()
+            # Only check schedules on the first iteration to avoid duplicate triggers
+            if iteration == 0:
+                self._check_schedules()
             power_status = self._determine_power_status()
 
             # Special handling for POWER_RESTORED_SIM state:
@@ -874,9 +887,38 @@ if __name__ == "__main__":
             if not os.path.exists(f):
                 open(f, 'a').close()
                 if f.endswith('.json'):
-                    with open(f, 'w') as jf: 
+                    with open(f, 'w') as jf:
                         jf.write('{}')
         except IOError as e:
             print(f"Warning: Cannot create {f}: {e}", file=sys.stderr)
 
-    PowerManager().run()
+    # Acquire lock file to prevent concurrent execution.
+    # Cron fires every minute, but we run for ~60 seconds (4 x 15s iterations).
+    lock_fd = None
+    try:
+        lock_fd = open(LOCK_FILE, 'w')
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        # Another instance is already running - exit silently
+        if lock_fd:
+            lock_fd.close()
+        sys.exit(0)
+
+    try:
+        for iteration in range(CHECK_ITERATIONS):
+            # Create a fresh PowerManager for each iteration to pick up
+            # any config changes made via the Web GUI between checks
+            PowerManager().run(iteration=iteration)
+
+            # Sleep between iterations (but not after the last one)
+            if iteration < CHECK_ITERATIONS - 1:
+                time.sleep(CHECK_INTERVAL_SECONDS)
+    finally:
+        # Release lock file
+        if lock_fd:
+            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+            lock_fd.close()
+        try:
+            os.remove(LOCK_FILE)
+        except OSError:
+            pass

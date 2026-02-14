@@ -60,6 +60,7 @@ POWER_SIMULATION_MODE="false"
 # IP - The IP address of the host
 # MAC - The MAC address of the host (use colons as separators)
 # BROADCAST_IP - (Optional) Specific broadcast IP for this host
+# SHUTDOWN_DELAY_MINUTES - (Optional) Makes host a UPS client. Use 0 for immediate shutdown.
 
 [WAKE_HOST_1]
 NAME=Synology NAS
@@ -80,6 +81,13 @@ IP=192.168.1.15
 MAC=00:11:32:aa:bb:cc
 BROADCAST_IP=192.168.1.255
 SHUTDOWN_DELAY_MINUTES=15
+
+# UPS Client with immediate shutdown (for short battery life UPS)
+[WAKE_HOST_4]
+NAME=Low-Battery Host
+IP=192.168.1.16
+MAC=00:11:32:dd:ee:ff
+SHUTDOWN_DELAY_MINUTES=0
 
 # === POWER OUTAGE SIMULATION SCHEDULES ===
 #

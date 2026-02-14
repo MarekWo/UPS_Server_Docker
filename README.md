@@ -21,7 +21,7 @@ This project is the perfect companion to the **[UPS_monitor](https://github.com/
 The logic is simple but effective:
 ![Dashboard](/images/workflow.png)
 
-1.  **Monitor:** A cron job inside the container runs a script (`power_manager.py`) every minute to ping a list of user-defined sentinel hosts.
+1.  **Monitor:** A cron job inside the container runs a script (`power_manager.py`) which pings a list of user-defined sentinel hosts every **15 seconds** (4 checks per minute) for rapid power failure detection.
 2.  **Decide:**
       * If **at least one** sentinel host is online, the script assumes grid power is OK and sets the virtual NUT server's status to `OL` (Online).
       * If **all** sentinel hosts are offline, the script assumes a power failure and sets the status to `OB LB` (On Battery, Low Battery).
@@ -149,7 +149,7 @@ Without this configuration, features relying on external network resolution (e.g
             - `IP`: IP address of the host
             - `MAC`: MAC address for Wake-on-LAN
             - `BROADCAST_IP`: (optional) Specific broadcast IP for this host
-            - `SHUTDOWN_DELAY_MINUTES`: (optional) Makes this host a UPS client with specified shutdown delay
+            - `SHUTDOWN_DELAY_MINUTES`: (optional) Makes this host a UPS client with specified shutdown delay. Use `0` for immediate shutdown
             - `AUTO_WOL`: (optional): When set to "false" the WoL packet will not be sent to this host automatically 
 
 4.  **Environment Configuration:**
@@ -236,8 +236,15 @@ IP=192.168.1.13
 MAC=00:11:32:2c:31:42
 SHUTDOWN_DELAY_MINUTES=15
 
-# WoL-only host (no UPS client functionality)
+# UPS Client with immediate shutdown (delay=0)
 [WAKE_HOST_3]
+NAME=Low-Battery UPS Host
+IP=192.168.1.14
+MAC=00:11:32:bb:cc:dd
+SHUTDOWN_DELAY_MINUTES=0
+
+# WoL-only host (no UPS client functionality)
+[WAKE_HOST_4]
 NAME=File Server
 IP=192.168.1.15
 MAC=00:11:32:aa:bb:cc
