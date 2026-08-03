@@ -65,6 +65,28 @@ BATTERY_MAX_DATA_AGE="60"
 BATTERY_AC_FALLBACK_VOLTAGE="13.50"
 BATTERY_AC_DISCHARGE_CURRENT="-1.0"
 
+# --- Decision mode ---
+# "observe" - the battery rules run, are logged and shown in the Web GUI, but
+#             clients keep being told exactly what the sentinel hosts imply.
+#             Nothing shuts down differently. Start here, watch the log for
+#             "SOURCE DISAGREEMENT" lines for a few days, and confirm the
+#             battery monitor agrees with reality before handing over control.
+# "enforce" - the battery rules actually decide when each host shuts down.
+BATTERY_DECISION_MODE="observe"
+
+# Default power source for hosts that do not set POWER_SOURCE themselves.
+# One of: sentinel | battery | both
+BATTERY_DEFAULT_POWER_SOURCE="sentinel"
+
+# --- Default battery thresholds ---
+# Applied to any host that does not override them. All are optional; the
+# built-in values below are used if a key is absent entirely.
+BATTERY_DEFAULT_CRITICAL_VOLTAGE="11.5"     # V - shut down immediately
+BATTERY_DEFAULT_SHUTDOWN_VOLTAGE="11.8"     # V - shut down
+BATTERY_DEFAULT_SHUTDOWN_SOC="25"           # % - shut down
+BATTERY_DEFAULT_MIN_RUNTIME_MINUTES="0"     # min - 0 disables this rule
+BATTERY_DEFAULT_WOL_MIN_SOC="0"             # % - 0 disables the WoL gate
+
 # --- Battery simulation (for testing) ---
 # Overlays fixed values on top of the real reading, so shutdown thresholds can
 # be exercised without actually draining the battery. Leave a value empty to
@@ -108,6 +130,22 @@ BATTERY_SIM_REMAINING=""      # minutes, e.g. 20
 # MAC - The MAC address of the host (use colons as separators)
 # BROADCAST_IP - (Optional) Specific broadcast IP for this host
 # SHUTDOWN_DELAY_MINUTES - (Optional) Makes host a UPS client. Use 0 for immediate shutdown.
+#
+# Battery monitor settings (all optional, only used when BATTERY_ENABLED=true):
+# POWER_SOURCE - Which source decides this host's power state:
+#                  sentinel (default) - ping-based detection only, as before
+#                  battery  - the Victron monitor decides; falls back to
+#                             sentinel automatically if its data is unavailable
+#                  both     - only declare an outage when BOTH agree; the most
+#                             conservative option, immune to network faults
+# CRITICAL_VOLTAGE / SHUTDOWN_VOLTAGE / SHUTDOWN_SOC / MIN_RUNTIME_MINUTES
+#              - Per-host shutdown thresholds; fall back to the BATTERY_DEFAULT_*
+#                values above when omitted.
+# WOL_MIN_SOC  - Do not send Wake-on-LAN until the battery reaches this charge.
+#
+# Note: with POWER_SOURCE=battery the thresholds already decide *when* to shut
+# down, so SHUTDOWN_DELAY_MINUTES becomes an extra grace period on top. Values
+# of 0-2 are usually what you want for battery-driven hosts.
 
 [WAKE_HOST_1]
 NAME=Synology NAS
@@ -135,6 +173,30 @@ NAME=Low-Battery Host
 IP=192.168.1.16
 MAC=00:11:32:dd:ee:ff
 SHUTDOWN_DELAY_MINUTES=0
+
+# Battery-driven host: shut down at 40% charge, wake again at 90%.
+# Less critical, so it gives up its share of the battery early.
+[WAKE_HOST_5]
+NAME=Media Server
+IP=192.168.1.17
+MAC=00:11:32:11:22:33
+SHUTDOWN_DELAY_MINUTES=2
+POWER_SOURCE=battery
+SHUTDOWN_SOC=40
+WOL_MIN_SOC=90
+
+# Critical host: runs the battery down much further, and requires both the
+# battery monitor and the sentinel hosts to agree before shutting down.
+[WAKE_HOST_6]
+NAME=Critical Server
+IP=192.168.1.18
+MAC=00:11:32:44:55:66
+SHUTDOWN_DELAY_MINUTES=0
+POWER_SOURCE=both
+SHUTDOWN_SOC=15
+CRITICAL_VOLTAGE=11.5
+MIN_RUNTIME_MINUTES=10
+WOL_MIN_SOC=95
 
 # === POWER OUTAGE SIMULATION SCHEDULES ===
 #

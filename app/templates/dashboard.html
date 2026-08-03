@@ -62,6 +62,19 @@
 </div>
 
 {% if battery is defined and battery.get('enabled') %}
+<div class="alert alert-info d-none" id="decision-mode-banner" role="alert">
+    <h5 class="alert-heading"><i class="fas fa-flask me-2"></i>Battery Rules Are in Observe Mode</h5>
+    <p class="mb-1">
+        The battery monitor's shutdown decisions are being calculated and logged, but clients are still
+        being told exactly what the sentinel hosts imply. Nothing shuts down differently yet.
+    </p>
+    <p class="mb-0"><small id="decision-mode-detail"></small></p>
+    <hr>
+    <p class="mb-0"><small>
+        Set <code>BATTERY_DECISION_MODE="enforce"</code> in the configuration once you are satisfied
+        the readings match reality.
+    </small></p>
+</div>
 <div class="row">
     <div class="col-12 mb-4">
         <div class="card" id="battery-card">
@@ -183,6 +196,7 @@
                                     <th>Name</th>
                                     <th>IP</th>
                                     <th>Status</th>
+                                    {% if battery is defined and battery.get('enabled') %}<th>Power Source</th>{% endif %}
                                     <th>Delay</th>
                                     <th>Actions</th>
                                 </tr>
@@ -195,6 +209,11 @@
                                     <td id="client-status-{{ client.ip.replace('.', '-') }}">
                                         {# Content is rendered dynamically by JavaScript #}
                                     </td>
+                                    {% if battery is defined and battery.get('enabled') %}
+                                    <td id="client-source-{{ client.ip.replace('.', '-') }}">
+                                        {# Content is rendered dynamically by JavaScript #}
+                                    </td>
+                                    {% endif %}
                                     <td>
                                         <span class="badge bg-info">
                                             {{ client.shutdown_delay }} min
@@ -225,6 +244,14 @@
                                     {# Content is rendered dynamically by JavaScript #}
                                 </span>
                             </div>
+                            {% if battery is defined and battery.get('enabled') %}
+                            <div class="mobile-card-row">
+                                <span class="mobile-card-label">Power Source:</span>
+                                <span class="mobile-card-value" id="client-source-mobile-{{ client.ip.replace('.', '-') }}">
+                                    {# Content is rendered dynamically by JavaScript #}
+                                </span>
+                            </div>
+                            {% endif %}
                             <div class="mobile-card-row">
                                 <span class="mobile-card-label">Delay:</span>
                                 <span class="mobile-card-value">
@@ -445,10 +472,59 @@ function refreshBatteryStatus() {
     // The card is only rendered when the integration is enabled.
     if (!document.getElementById('battery-card')) return;
 
-    fetch('/battery_status')
+    fetch('/power_state')
         .then(res => res.json())
-        .then(updateBatteryUI)
-        .catch(error => console.error('Error refreshing battery status:', error));
+        .then(state => {
+            updateBatteryUI(state.battery);
+            updateHostVerdictUI(state);
+        })
+        .catch(error => console.error('Error refreshing power state:', error));
+}
+
+function updateHostVerdictUI(state) {
+    const banner = document.getElementById('decision-mode-banner');
+    if (banner) {
+        // Observe mode is easy to forget you left on, so say so plainly.
+        const observing = state.decision_mode === 'observe';
+        banner.classList.toggle('d-none', !observing);
+        if (observing) {
+            const disagreeing = Object.values(state.hosts || {})
+                .filter(h => h.disagreement).length;
+            document.getElementById('decision-mode-detail').textContent = disagreeing
+                ? `${disagreeing} host(s) would currently be decided differently by the battery monitor `
+                  + `— check the log for "SOURCE DISAGREEMENT" entries.`
+                : 'The battery monitor currently agrees with the sentinel hosts on every client.';
+        }
+    }
+
+    const hosts = state.hosts || {};
+    for (const [ip, verdict] of Object.entries(hosts)) {
+        const key = ip.replace(/\./g, '-');
+        const sourceLabel = {
+            battery: '<span class="badge bg-primary"><i class="fas fa-car-battery me-1"></i>Battery</span>',
+            both: '<span class="badge bg-primary"><i class="fas fa-link me-1"></i>Battery + Sentinel</span>',
+            sentinel: '<span class="badge bg-secondary"><i class="fas fa-eye me-1"></i>Sentinel</span>'
+        }[verdict.source] || '';
+
+        let html = sourceLabel;
+        if (verdict.detail === 'OB') {
+            html += ' <span class="badge bg-warning text-dark">On Battery</span>';
+        }
+        if (verdict.disagreement) {
+            html += ' <span class="badge bg-danger" title="Battery monitor and sentinel hosts disagree">'
+                  + '<i class="fas fa-triangle-exclamation me-1"></i>Disagreement</span>';
+        }
+        if (verdict.mode === 'observe' && verdict.would_be !== verdict.status) {
+            html += ` <span class="badge bg-info text-dark" title="Observe mode: this is what enforce mode would serve">`
+                  + `Would be ${verdict.would_be}</span>`;
+        }
+        html += `<div class="small text-muted mt-1">${verdict.reason}</div>`;
+
+        for (const id of ['client-source-' + key, 'client-source-mobile-' + key]) {
+            const cell = document.getElementById(id);
+            if (cell) cell.innerHTML = html;
+        }
+    }
 }
 
 function updateBatteryUI(battery) {

@@ -144,7 +144,10 @@ def write_power_manager_config(config, wake_hosts, schedules):
         battery_keys = [
             'BATTERY_ENABLED', 'BATTERY_API_URL', 'BATTERY_API_TIMEOUT',
             'BATTERY_MAX_DATA_AGE', 'BATTERY_AC_FALLBACK_VOLTAGE',
-            'BATTERY_AC_DISCHARGE_CURRENT',
+            'BATTERY_AC_DISCHARGE_CURRENT', 'BATTERY_DECISION_MODE',
+            'BATTERY_DEFAULT_POWER_SOURCE', 'BATTERY_DEFAULT_CRITICAL_VOLTAGE',
+            'BATTERY_DEFAULT_SHUTDOWN_VOLTAGE', 'BATTERY_DEFAULT_SHUTDOWN_SOC',
+            'BATTERY_DEFAULT_MIN_RUNTIME_MINUTES', 'BATTERY_DEFAULT_WOL_MIN_SOC',
         ]
         for key in battery_keys:
             if key in config:
@@ -427,6 +430,18 @@ def save_main_config():
             'battery_api_url', 'http://localhost:8088').strip()
         pm_config['BATTERY_API_TIMEOUT'] = request.form.get('battery_api_timeout', '5')
         pm_config['BATTERY_MAX_DATA_AGE'] = request.form.get('battery_max_data_age', '60')
+        pm_config['BATTERY_DECISION_MODE'] = request.form.get('battery_decision_mode', 'observe')
+        pm_config['BATTERY_DEFAULT_POWER_SOURCE'] = request.form.get(
+            'battery_default_power_source', 'sentinel')
+
+        for form_field, config_key in (
+            ('battery_default_critical_voltage', 'BATTERY_DEFAULT_CRITICAL_VOLTAGE'),
+            ('battery_default_shutdown_voltage', 'BATTERY_DEFAULT_SHUTDOWN_VOLTAGE'),
+            ('battery_default_shutdown_soc', 'BATTERY_DEFAULT_SHUTDOWN_SOC'),
+            ('battery_default_min_runtime_minutes', 'BATTERY_DEFAULT_MIN_RUNTIME_MINUTES'),
+            ('battery_default_wol_min_soc', 'BATTERY_DEFAULT_WOL_MIN_SOC'),
+        ):
+            pm_config[config_key] = request.form.get(form_field, '').strip()
 
         pm_config['BATTERY_SIMULATION'] = 'true' if 'battery_simulation' in request.form else 'false'
         for form_field, config_key in (
@@ -789,6 +804,19 @@ def get_client_statuses_json():
 def get_battery_status_json():
     """Endpoint to get the latest battery reading for the dashboard panel."""
     return jsonify(get_battery_section())
+
+@app.route('/power_state')
+def get_power_state_json():
+    """Endpoint to get the full power state, including per-host verdicts."""
+    state = read_power_state()
+    if state is None:
+        return jsonify({
+            'available': False,
+            'battery': {'enabled': False, 'available': False},
+            'hosts': {},
+        })
+    state['available'] = True
+    return jsonify(state)
 
 @app.route('/test_battery', methods=['POST'])
 def test_battery_connection():

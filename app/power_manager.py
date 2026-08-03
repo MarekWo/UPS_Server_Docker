@@ -16,6 +16,7 @@ from email.utils import formataddr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from battery_monitor import BatteryMonitor
+from power_source import PowerSourceEvaluator
 
 # --- Constants ---
 APP_NAME = "PowerManager"
@@ -303,6 +304,7 @@ class PowerManager:
 
         self.notifier = Notifier(self.config)
         self.battery_monitor = BatteryMonitor(self.config)
+        self.evaluator = PowerSourceEvaluator(self.config)
         self.battery_status = None
         self.sentinel_online_count = 0
         self.sentinel_total_count = 0
@@ -798,6 +800,62 @@ class PowerManager:
                 self.battery_monitor.last_error or "unknown reason",
             )
 
+    def _evaluate_hosts(self, power_status):
+        """Run the per-host power evaluation and log anything noteworthy.
+
+        Returns:
+            Dict keyed by host IP, ready to publish in power_state.json.
+        """
+        verdicts = {}
+        simulation = self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true'
+
+        # The real sentinel verdict, without the simulation override that
+        # _determine_power_status() folds in - the evaluator needs both facts
+        # separately to explain its reasoning.
+        sentinel_offline = (
+            self.sentinel_total_count > 0 and self.sentinel_online_count == 0
+        )
+
+        for section, params in self.wake_hosts.items():
+            ip = params.get('IP')
+            if not ip or 'SHUTDOWN_DELAY_MINUTES' not in params:
+                continue  # WoL-only host, not a UPS client
+
+            try:
+                verdict = self.evaluator.evaluate_host(
+                    params, self.battery_status, sentinel_offline, simulation
+                )
+            except Exception as e:
+                log.error(
+                    f"Failed to evaluate host {params.get('NAME', ip)}: {e}",
+                    exc_info=True,
+                )
+                continue
+
+            entry = verdict.to_dict()
+            entry['name'] = params.get('NAME', section)
+            entry['section'] = section
+            verdicts[ip] = entry
+
+            name = params.get('NAME', ip)
+            log.info(
+                "VERDICT %s (%s): serving %s [detail %s, source %s] - %s",
+                name, ip, verdict.status, verdict.detail, verdict.source, verdict.reason,
+            )
+
+            # The whole point of observe mode: surface where the battery would
+            # have decided differently, loudly enough to be found in the log.
+            if verdict.disagreement:
+                log.warning(
+                    "SOURCE DISAGREEMENT %s (%s): sentinels imply %s, battery implies %s "
+                    "- %s (mode=%s)",
+                    name, ip,
+                    'OB LB' if sentinel_offline else 'OL',
+                    verdict.would_be, verdict.reason, verdict.mode,
+                )
+
+        return verdicts
+
     def _write_power_state(self, power_status, host_verdicts=None):
         """Publish the current power picture for the API and Web GUI.
 
@@ -824,6 +882,7 @@ class PowerManager:
                 'power': power_status,
             },
             'simulation': self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true',
+            'decision_mode': self.evaluator.mode,
             'hosts': host_verdicts or {},
         }
 
@@ -924,7 +983,7 @@ class PowerManager:
 
             self._poll_battery()
             power_status = self._determine_power_status()
-            self._write_power_state(power_status)
+            self._write_power_state(power_status, self._evaluate_hosts(power_status))
 
             # Special handling for POWER_RESTORED_SIM state:
             # Even if power_status is OFFLINE (due to simulation), we need to handle WoL

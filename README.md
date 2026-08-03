@@ -516,6 +516,65 @@ BATTERY_MAX_DATA_AGE="60"        # Readings older than this are rejected as stal
 
 Older victron-bm-webui versions do not report `ac_power` themselves. The server detects this and derives the mains state locally from voltage and current, using `BATTERY_AC_FALLBACK_VOLTAGE` and `BATTERY_AC_DISCHARGE_CURRENT`; the dashboard marks such readings as *Inferred*. Upgrading victron-bm-webui is the better fix, since it applies hysteresis and debounce across readings rather than judging each one in isolation.
 
+#### Choosing a power source per host
+
+Which source decides a host's power state is configured **per host**, because hosts differ in how much they can afford a wrong answer:
+
+| `POWER_SOURCE` | Behaviour |
+|---|---|
+| `sentinel` (default) | Ping-based detection only — exactly as before. |
+| `battery` | The Victron monitor decides. Falls back to sentinels automatically whenever battery data is missing or stale. |
+| `both` | An outage is only declared when **both** sources agree. The most conservative option, and immune to network faults. |
+
+Any host left at `sentinel` behaves identically to how it did before this feature existed.
+
+Once a host is on `battery` or `both`, its shutdown point is set by thresholds rather than by a shared timer:
+
+```bash
+[WAKE_HOST_5]
+NAME=Media Server
+IP=192.168.1.17
+MAC=00:11:32:11:22:33
+SHUTDOWN_DELAY_MINUTES=2
+POWER_SOURCE=battery
+SHUTDOWN_SOC=40           # Give up early - this host is not critical
+WOL_MIN_SOC=90            # Don't wake it until the battery has recovered
+
+[WAKE_HOST_6]
+NAME=Critical Server
+IP=192.168.1.18
+MAC=00:11:32:44:55:66
+SHUTDOWN_DELAY_MINUTES=0
+POWER_SOURCE=both
+SHUTDOWN_SOC=15           # Run the battery much further down
+CRITICAL_VOLTAGE=11.5
+MIN_RUNTIME_MINUTES=10
+WOL_MIN_SOC=95
+```
+
+Thresholds are evaluated in order of how conclusive each signal is: `CRITICAL_VOLTAGE`, then `SHUTDOWN_SOC`, then `SHUTDOWN_VOLTAGE`, then `MIN_RUNTIME_MINUTES`. Any threshold left unset falls back to the corresponding `BATTERY_DEFAULT_*` value, and then to a built-in default.
+
+> **Note on `SHUTDOWN_DELAY_MINUTES`:** with a battery source the thresholds already decide *when* to shut down, so the client-side timer becomes an additional grace period stacked on top. Values of `0`–`2` are usually what you want for battery-driven hosts.
+
+#### Observe mode — try it before trusting it
+
+Handing shutdown decisions to a new data source on a live system is worth doing carefully, so the integration starts in **observe** mode:
+
+```bash
+BATTERY_DECISION_MODE="observe"   # or "enforce"
+```
+
+In observe mode the battery rules run in full, appear on the dashboard, and are written to the log — but clients keep being told exactly what the sentinel hosts imply. **Nothing shuts down differently.** Wherever the two sources would have disagreed, the log says so:
+
+```
+SOURCE DISAGREEMENT Media Server (192.168.1.17): sentinels imply OB LB,
+battery implies OL - mains present (13.76V, +0.10A, SoC 100.0%) (mode=observe)
+```
+
+Leave it in observe mode for a few days, confirm the battery monitor tracks reality, then switch to `enforce`. A sensible rollout is to enable `POWER_SOURCE=battery` one host at a time, starting with the least critical one.
+
+Power outage simulation is unaffected by the decision mode — a simulated outage still exercises the real shutdown path in both modes.
+
 #### Testing without draining the battery
 
 Battery simulation overlays fixed values on top of the real reading, so thresholds can be exercised on demand. It works independently of Power Outage Simulation, and the dashboard shows a **Simulated** badge whenever it is active.
