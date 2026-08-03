@@ -538,7 +538,15 @@ def apply_battery_host_fields(host):
     An empty field means "inherit the global default", so the key is removed
     rather than stored as an empty string - otherwise the evaluator would have
     to treat '' as a missing threshold everywhere.
+
+    The battery fields are only rendered while the integration is enabled. When
+    they are absent, this is a no-op: an unrendered field is not the same as a
+    cleared one, and editing a host's name with the integration temporarily off
+    must not silently wipe its thresholds.
     """
+    if 'battery_fields_present' not in request.form:
+        return
+
     source = request.form.get('power_source', 'sentinel').strip().lower()
     if source in ('battery', 'both'):
         host['POWER_SOURCE'] = source

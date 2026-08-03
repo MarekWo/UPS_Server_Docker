@@ -128,24 +128,27 @@
             If the service is unreachable or its readings go stale, the server silently falls
             back to sentinel-based detection.
         </p>
+        <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="battery_enabled" name="battery_enabled" value="true" {% if pm_config.get('BATTERY_ENABLED') == 'true' %}checked{% endif %}>
+            <label class="form-check-label" for="battery_enabled">Enable Battery Monitor Integration</label>
+        </div>
+        <div class="form-text mb-3">When disabled, nothing changes &mdash; the server uses sentinel hosts only.</div>
+
+        {# Everything below is only relevant once the integration is on. Values
+           stay in the form while hidden, so toggling off and on does not lose
+           anything the administrator has already configured. #}
+        <div id="battery-settings">
         <div class="row">
-            <div class="col-md-4 mb-3">
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" id="battery_enabled" name="battery_enabled" value="true" {% if pm_config.get('BATTERY_ENABLED') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="battery_enabled">Enable Battery Monitor Integration</label>
-                </div>
-                <div class="form-text">When disabled, nothing changes &mdash; the server uses sentinel hosts only.</div>
-            </div>
-            <div class="col-md-4 mb-3">
+            <div class="col-md-6 mb-3">
                 <label for="battery_api_url" class="form-label">Battery Monitor URL</label>
                 <input type="text" class="form-control" id="battery_api_url" name="battery_api_url" placeholder="http://localhost:8088" value="{{ pm_config.get('BATTERY_API_URL', 'http://localhost:8088') }}">
                 <div class="form-text">Base URL of the victron-bm-webui instance.</div>
             </div>
-            <div class="col-md-2 mb-3">
+            <div class="col-md-3 mb-3">
                 <label for="battery_api_timeout" class="form-label">Timeout (s)</label>
                 <input type="number" class="form-control" id="battery_api_timeout" name="battery_api_timeout" min="1" max="30" value="{{ pm_config.get('BATTERY_API_TIMEOUT', '5') }}">
             </div>
-            <div class="col-md-2 mb-3">
+            <div class="col-md-3 mb-3">
                 <label for="battery_max_data_age" class="form-label">Max Data Age (s)</label>
                 <input type="number" class="form-control" id="battery_max_data_age" name="battery_max_data_age" min="15" max="600" value="{{ pm_config.get('BATTERY_MAX_DATA_AGE', '60') }}">
                 <div class="form-text">Older readings are rejected.</div>
@@ -241,6 +244,7 @@
                 <input type="number" min="0" class="form-control" id="battery_sim_remaining" name="battery_sim_remaining" value="{{ pm_config.get('BATTERY_SIM_REMAINING', '') }}">
             </div>
         </div>
+        </div>{# /battery-settings #}
     </div>
 
     <div class="config-section">
@@ -295,11 +299,15 @@
     </button>
 </form>
 
+{# Keyed off the saved setting rather than the checkbox: the test probes the
+   configuration on disk, so offering it before Save would be misleading. #}
+{% if pm_config.get('BATTERY_ENABLED') == 'true' %}
 <form method="POST" action="{{ url_for('test_battery_connection') }}" class="d-inline-block ms-2">
     <button type="submit" class="btn btn-secondary btn-lg">
         <i class="fas fa-car-battery me-1"></i> Test Battery Monitor
     </button>
 </form>
+{% endif %}
 </div>
 
 
@@ -544,12 +552,19 @@
 </div>
 
 
-{% macro battery_host_fields(prefix) %}
+{% macro battery_host_fields(prefix, enabled) %}
+{# Hidden entirely until the integration is switched on in the main
+   configuration - there is nothing useful to set here before that.
+
+   The marker below tells the server these fields were actually rendered.
+   Without it, editing a host while the integration is off would submit no
+   battery fields at all, and the handler would read that as "clear them". #}
+{% if enabled %}
+<input type="hidden" name="battery_fields_present" value="1">
 <hr>
 <h6><i class="fas fa-car-battery me-2"></i>Battery Monitor</h6>
 <p class="text-muted small">
-    Only used when the battery monitor integration is enabled. Leave a threshold empty
-    to inherit the global default.
+    Leave a threshold empty to inherit the global default.
 </p>
 <div class="mb-3">
     <label for="{{ prefix }}_power_source" class="form-label">Power Source</label>
@@ -592,6 +607,7 @@
     <input type="number" step="1" min="0" class="form-control" id="{{ prefix }}_min_runtime_minutes" name="min_runtime_minutes">
     <div class="form-text">Shut down when the estimated runtime drops to this. 0 or empty disables the rule.</div>
 </div>
+{% endif %}
 {% endmacro %}
 
 <div class="modal fade" id="addWakeHostModal" tabindex="-1">
@@ -638,7 +654,7 @@
                         <label class="form-check-label" for="add_ignore_simulation">Do not shutdown in Power Outage Simulation mode</label>
                         <div class="form-text">If enabled, this UPS client will ignore simulated power outages and continue running.</div>
                     </div>
-                    {{ battery_host_fields('add') }}
+                    {{ battery_host_fields('add', pm_config.get('BATTERY_ENABLED') == 'true') }}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -689,7 +705,7 @@
                         <label class="form-check-label" for="edit_ignore_simulation">Do not shutdown in Power Outage Simulation mode</label>
                         <div class="form-text">If enabled, this UPS client will ignore simulated power outages and continue running.</div>
                     </div>
-                    {{ battery_host_fields('edit') }}
+                    {{ battery_host_fields('edit', pm_config.get('BATTERY_ENABLED') == 'true') }}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -809,6 +825,21 @@ function editWakeHost(section) {
     document.getElementById('editWakeHostForm').action = '/edit_wake_host/' + section;
     new bootstrap.Modal(document.getElementById('editWakeHostModal')).show();
 }
+
+// Battery settings are irrelevant to anyone without a Victron monitor, so keep
+// them out of the way until the integration is switched on. The fields stay in
+// the form while hidden, so toggling off and back on loses nothing.
+(function () {
+    const toggle = document.getElementById('battery_enabled');
+    const settings = document.getElementById('battery-settings');
+    if (!toggle || !settings) return;
+
+    function sync() {
+        settings.style.display = toggle.checked ? '' : 'none';
+    }
+    toggle.addEventListener('change', sync);
+    sync();
+})();
 
 document.getElementById('add_mac').addEventListener('input', function(e) {
     let value = e.target.value.replace(/[^0-9A-Fa-f]/g, '');
