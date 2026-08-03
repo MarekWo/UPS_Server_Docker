@@ -14,6 +14,9 @@ import smtplib
 from email.mime.text import MIMEText
 from email.utils import formataddr
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from battery_monitor import BatteryMonitor
+
 # --- Constants ---
 APP_NAME = "PowerManager"
 LOG_FILE = "/var/log/power_manager.log"
@@ -22,6 +25,7 @@ STATE_FILE = "/var/run/nut/power_manager.state"
 NOTIFICATION_STATE_FILE = "/var/run/nut/notification.state"
 CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
 CLIENT_NOTIFICATION_STATE_FILE = "/var/run/nut/client_notification.state"
+POWER_STATE_FILE = "/var/run/nut/power_state.json"
 UPS_STATE_FILE_DEFAULT = "/var/run/nut/virtual.device"
 LOCK_FILE = "/var/run/nut/power_manager.lock"
 
@@ -298,6 +302,10 @@ class PowerManager:
             log.info("Debug mode enabled via configuration")
 
         self.notifier = Notifier(self.config)
+        self.battery_monitor = BatteryMonitor(self.config)
+        self.battery_status = None
+        self.sentinel_online_count = 0
+        self.sentinel_total_count = 0
         self.power_state = None
         self.power_state_timestamp = None
         self.power_state_was_simulation = False
@@ -490,8 +498,10 @@ class PowerManager:
 
         # Always check sentinel hosts to detect real power failures
         sentinel_hosts = self.config.get('SENTINEL_HOSTS', '').split()
+        self.sentinel_total_count = len(sentinel_hosts)
         if not sentinel_hosts:
             log.warning("No sentinel hosts configured, assuming power is ONLINE")
+            self.sentinel_online_count = 0
             return "ONLINE"
 
         log.info(f"Pinging sentinel hosts: {' '.join(sentinel_hosts)}")
@@ -511,6 +521,7 @@ class PowerManager:
                 log.warning(f"  -> Failed to ping sentinel host {ip}: {e}")
 
         log.info(f"Found {online_hosts_count} online sentinel hosts.")
+        self.sentinel_online_count = online_hosts_count
 
         real_power_offline = online_hosts_count == 0
 
@@ -763,6 +774,69 @@ class PowerManager:
         except (IOError, json.JSONDecodeError) as e:
             log.error(f"Failed to update client status file: {e}")
 
+    def _poll_battery(self):
+        """Read the battery monitor, if the integration is enabled.
+
+        Never raises: battery data is an enhancement, and a failure here must
+        leave the sentinel logic completely untouched.
+        """
+        self.battery_status = None
+        if not self.battery_monitor.enabled:
+            return
+
+        try:
+            self.battery_status = self.battery_monitor.get_status()
+        except Exception as e:
+            log.error(f"Battery monitor failed unexpectedly: {e}", exc_info=True)
+            return
+
+        if self.battery_status:
+            log.info(f"Battery: {self.battery_status.describe()}")
+        else:
+            log.warning(
+                "Battery data unavailable (%s) - falling back to sentinel logic",
+                self.battery_monitor.last_error or "unknown reason",
+            )
+
+    def _write_power_state(self, power_status, host_verdicts=None):
+        """Publish the current power picture for the API and Web GUI.
+
+        power_manager.py runs from cron while api.py and web_gui.py run under
+        gunicorn, so this file is how the decision-making process hands its
+        conclusions to the processes that serve them. Written atomically.
+        """
+        battery_section = {'enabled': self.battery_monitor.enabled, 'available': False}
+        if self.battery_monitor.enabled:
+            battery_section['url'] = self.battery_monitor.base_url
+            battery_section['simulation'] = self.battery_monitor.simulation
+            if self.battery_status:
+                battery_section['available'] = True
+                battery_section.update(self.battery_status.to_dict())
+            else:
+                battery_section['error'] = self.battery_monitor.last_error
+
+        state = {
+            'updated_at': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'battery': battery_section,
+            'sentinel': {
+                'online': self.sentinel_online_count,
+                'total': self.sentinel_total_count,
+                'power': power_status,
+            },
+            'simulation': self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true',
+            'hosts': host_verdicts or {},
+        }
+
+        try:
+            temp_file = POWER_STATE_FILE + ".tmp"
+            with open(temp_file, 'w') as f:
+                json.dump(state, f, indent=2)
+            # os.replace rather than os.rename: same atomic swap on POSIX, but
+            # it also overwrites an existing target instead of failing.
+            os.replace(temp_file, POWER_STATE_FILE)
+        except (IOError, OSError, TypeError) as e:
+            log.error(f"Cannot write power state file: {e}")
+
     def _check_client_statuses(self):
         """Check client statuses and send notifications with improved error handling."""
         if not os.path.exists(CLIENT_STATUS_FILE): 
@@ -847,7 +921,10 @@ class PowerManager:
             # Only check schedules on the first iteration to avoid duplicate triggers
             if iteration == 0:
                 self._check_schedules()
+
+            self._poll_battery()
             power_status = self._determine_power_status()
+            self._write_power_state(power_status)
 
             # Special handling for POWER_RESTORED_SIM state:
             # Even if power_status is OFFLINE (due to simulation), we need to handle WoL
@@ -882,7 +959,11 @@ class PowerManager:
 
 if __name__ == "__main__":
     # Ensure required files exist with proper error handling
-    for f in [STATE_FILE, NOTIFICATION_STATE_FILE, CLIENT_NOTIFICATION_STATE_FILE, CLIENT_STATUS_FILE]:
+    # POWER_STATE_FILE is deliberately absent: _write_power_state() creates it
+    # on the first cycle, and an empty placeholder would only make the API log
+    # a parse warning until then.
+    for f in [STATE_FILE, NOTIFICATION_STATE_FILE, CLIENT_NOTIFICATION_STATE_FILE,
+              CLIENT_STATUS_FILE]:
         try:
             if not os.path.exists(f):
                 open(f, 'a').close()

@@ -34,6 +34,12 @@ UPSC_CMD = "/usr/bin/upsc"
 POWER_MANAGER_CONFIG = "/etc/nut/power_manager.conf"
 UPS_CONF_FILE = "/etc/nut/ups.conf"
 CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
+POWER_STATE_FILE = "/var/run/nut/power_state.json"
+
+# How long a power_state.json snapshot stays usable. power_manager.py refreshes
+# it every 15s; beyond this the cron job is presumed dead and we ignore the file
+# rather than serve decisions based on a stale battery reading.
+POWER_STATE_MAX_AGE_SECONDS = 90
 
 app = Flask(__name__)
 
@@ -143,6 +149,42 @@ def read_power_manager_config():
                     config[key] = value
     
     return config, wake_hosts
+
+def read_power_state():
+    """Read the snapshot published by power_manager.py.
+
+    Returns None when the file is missing, unparseable or too old to trust,
+    so callers fall back to the plain NUT status.
+    """
+    if not os.path.exists(POWER_STATE_FILE):
+        return None
+
+    try:
+        with open(POWER_STATE_FILE, 'r') as f:
+            state = json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        app.logger.warning(f"Cannot read power state file: {e}")
+        return None
+
+    updated_at = state.get('updated_at')
+    if not updated_at:
+        return None
+
+    try:
+        ts = datetime.strptime(updated_at, '%Y-%m-%dT%H:%M:%SZ')
+    except (ValueError, TypeError):
+        app.logger.warning(f"Invalid power state timestamp: {updated_at}")
+        return None
+
+    age = (datetime.utcnow() - ts).total_seconds()
+    if age > POWER_STATE_MAX_AGE_SECONDS:
+        app.logger.warning(
+            f"Power state file is {age:.0f}s old (max {POWER_STATE_MAX_AGE_SECONDS}s) - ignoring"
+        )
+        return None
+
+    return state
+
 
 def get_client_ip():
     """
@@ -302,6 +344,32 @@ def get_upsc_data():
 
     app.logger.info(f"Successfully retrieved and parsed UPS status.")
     return jsonify(nested_data)
+
+@app.route('/battery', methods=['GET'])
+def get_battery():
+    """
+    Endpoint to retrieve the latest battery reading from the Victron monitor.
+
+    Returns the `battery` section of the snapshot written by power_manager.py.
+    When the integration is disabled, unreachable or the snapshot is stale,
+    `available` is false and `error` explains why.
+    """
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or auth_header != f"Bearer {API_TOKEN}":
+        abort(401, description="Unauthorized: Missing or invalid API token.")
+
+    state = read_power_state()
+    if state is None:
+        return jsonify({
+            'enabled': False,
+            'available': False,
+            'error': 'No fresh power state available from the power manager.',
+        })
+
+    battery = state.get('battery', {})
+    battery['updated_at'] = state.get('updated_at')
+    return jsonify(battery)
+
 
 @app.route('/config', methods=['GET'])
 def get_config():

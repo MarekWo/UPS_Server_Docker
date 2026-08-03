@@ -61,6 +61,68 @@
     </div>
 </div>
 
+{% if battery is defined and battery.get('enabled') %}
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card" id="battery-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-car-battery me-2"></i>Battery Monitor</h5>
+                <span id="battery-header-badge"></span>
+            </div>
+            <div class="card-body">
+                <div id="battery-unavailable" class="alert alert-warning mb-0 d-none" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <span id="battery-error">Battery data unavailable.</span>
+                    <hr>
+                    <small class="mb-0 d-block">Shutdown decisions have fallen back to sentinel hosts.</small>
+                </div>
+                <div id="battery-details" class="d-none">
+                    <div class="row g-4 system-overview-mobile">
+                        <div class="col-md-3 col-sm-6">
+                            <div class="text-center">
+                                <div class="h3 mb-1" id="battery-soc-icon"><i class="fas fa-battery-full"></i></div>
+                                <div class="h4 mb-1" id="battery-soc">--</div>
+                                <div class="progress mb-1" style="height: 6px;">
+                                    <div class="progress-bar" id="battery-soc-bar" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <small class="text-muted">State of Charge</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="text-center">
+                                <div class="h3 text-primary mb-1"><i class="fas fa-bolt"></i></div>
+                                <div class="h4 mb-0" id="battery-voltage">--</div>
+                                <small class="text-muted">Voltage</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="text-center">
+                                <div class="h3 mb-1" id="battery-current-icon"><i class="fas fa-exchange-alt"></i></div>
+                                <div class="h4 mb-0" id="battery-current">--</div>
+                                <small class="text-muted" id="battery-current-label">Current</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <div class="text-center">
+                                <div class="h3 text-info mb-1"><i class="fas fa-hourglass-half"></i></div>
+                                <div class="h4 mb-0" id="battery-runtime">--</div>
+                                <small class="text-muted">Estimated Runtime</small>
+                            </div>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="d-flex flex-wrap gap-3 justify-content-center small text-muted">
+                        <span><i class="fas fa-thermometer-half me-1"></i><span id="battery-temperature">--</span></span>
+                        <span><i class="fas fa-clock me-1"></i>Reading age: <span id="battery-age">--</span></span>
+                        <span id="battery-since-wrap" class="d-none"><i class="fas fa-history me-1"></i>Since: <span id="battery-since">--</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row">
     <div class="col-lg-3 mb-4">
         <div class="card">
@@ -368,13 +430,129 @@ function refreshAllStatuses() {
         if (pingData.wake_host_status) {
             currentWakeHostStatus = pingData.wake_host_status;
         }
-        
+
         updatePingStatusUI(pingData.sentinel_status, 'sentinel');
-        updatePingStatusUI(pingData.wake_host_status, 'wake'); 
-        
+        updatePingStatusUI(pingData.wake_host_status, 'wake');
+
         updateClientStatusUI(clientData);
 
     }).catch(error => console.error('Error refreshing statuses:', error));
+
+    refreshBatteryStatus();
+}
+
+function refreshBatteryStatus() {
+    // The card is only rendered when the integration is enabled.
+    if (!document.getElementById('battery-card')) return;
+
+    fetch('/battery_status')
+        .then(res => res.json())
+        .then(updateBatteryUI)
+        .catch(error => console.error('Error refreshing battery status:', error));
+}
+
+function updateBatteryUI(battery) {
+    const details = document.getElementById('battery-details');
+    const unavailable = document.getElementById('battery-unavailable');
+    const headerBadge = document.getElementById('battery-header-badge');
+
+    if (!battery || !battery.available) {
+        details.classList.add('d-none');
+        unavailable.classList.remove('d-none');
+        document.getElementById('battery-error').textContent =
+            (battery && battery.error) || 'Battery data unavailable.';
+        headerBadge.innerHTML = '<span class="badge bg-secondary">Unavailable</span>';
+        return;
+    }
+
+    unavailable.classList.add('d-none');
+    details.classList.remove('d-none');
+
+    // Mains presence is the headline: it is what the shutdown logic keys on.
+    let badges = '';
+    if (battery.ac_power === true) {
+        badges = '<span class="badge bg-success"><i class="fas fa-plug me-1"></i>On Mains</span>';
+    } else if (battery.ac_power === false) {
+        badges = '<span class="badge bg-danger"><i class="fas fa-plug-circle-xmark me-1"></i>On Battery</span>';
+    } else {
+        badges = '<span class="badge bg-secondary">Mains state unknown</span>';
+    }
+    if (battery.ac_power_inferred) {
+        badges += ' <span class="badge bg-warning text-dark" title="This victron-bm-webui version does not report ac_power; the state is being inferred locally from voltage and current.">Inferred</span>';
+    }
+    if (battery.simulation) {
+        badges += ' <span class="badge bg-warning text-dark"><i class="fas fa-flask me-1"></i>Simulated</span>';
+    }
+    headerBadge.innerHTML = badges;
+
+    const soc = battery.soc;
+    const socEl = document.getElementById('battery-soc');
+    const socBar = document.getElementById('battery-soc-bar');
+    const socIcon = document.getElementById('battery-soc-icon');
+    if (soc === null || soc === undefined) {
+        socEl.textContent = '--';
+        socBar.style.width = '0%';
+    } else {
+        socEl.textContent = soc.toFixed(1) + '%';
+        socBar.style.width = Math.max(0, Math.min(100, soc)) + '%';
+        const level = soc >= 60 ? 'success' : (soc >= 30 ? 'warning' : 'danger');
+        socBar.className = 'progress-bar bg-' + level;
+        socIcon.className = 'h3 mb-1 text-' + level;
+        const icon = soc >= 87 ? 'full' : (soc >= 62 ? 'three-quarters'
+                   : (soc >= 37 ? 'half' : (soc >= 12 ? 'quarter' : 'empty')));
+        socIcon.innerHTML = '<i class="fas fa-battery-' + icon + '"></i>';
+    }
+
+    document.getElementById('battery-voltage').textContent =
+        battery.voltage === null || battery.voltage === undefined
+            ? '--' : battery.voltage.toFixed(2) + ' V';
+
+    const current = battery.current;
+    const currentEl = document.getElementById('battery-current');
+    const currentIcon = document.getElementById('battery-current-icon');
+    const currentLabel = document.getElementById('battery-current-label');
+    if (current === null || current === undefined) {
+        currentEl.textContent = '--';
+        currentLabel.textContent = 'Current';
+        currentIcon.className = 'h3 text-secondary mb-1';
+    } else {
+        currentEl.textContent = (current > 0 ? '+' : '') + current.toFixed(2) + ' A';
+        if (current < 0) {
+            currentLabel.textContent = 'Discharging';
+            currentIcon.className = 'h3 text-danger mb-1';
+            currentIcon.innerHTML = '<i class="fas fa-arrow-down"></i>';
+        } else {
+            currentLabel.textContent = 'Charging';
+            currentIcon.className = 'h3 text-success mb-1';
+            currentIcon.innerHTML = '<i class="fas fa-arrow-up"></i>';
+        }
+    }
+
+    // remaining_mins is null while charging - the BMV only estimates on discharge.
+    const runtime = battery.remaining_mins;
+    document.getElementById('battery-runtime').textContent =
+        (runtime === null || runtime === undefined)
+            ? '—'
+            : (runtime >= 60
+                ? Math.floor(runtime / 60) + 'h ' + (runtime % 60) + 'm'
+                : runtime + ' min');
+
+    document.getElementById('battery-temperature').textContent =
+        battery.temperature === null || battery.temperature === undefined
+            ? '--' : battery.temperature.toFixed(1) + ' °C';
+
+    document.getElementById('battery-age').textContent =
+        battery.data_age_seconds === null || battery.data_age_seconds === undefined
+            ? '--' : Math.round(battery.data_age_seconds) + 's';
+
+    const sinceWrap = document.getElementById('battery-since-wrap');
+    if (battery.ac_power_since) {
+        sinceWrap.classList.remove('d-none');
+        document.getElementById('battery-since').textContent =
+            new Date(battery.ac_power_since).toLocaleString();
+    } else {
+        sinceWrap.classList.add('d-none');
+    }
 }
 
 function updatePingStatusUI(statuses, prefix) {

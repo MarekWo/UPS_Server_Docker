@@ -118,6 +118,81 @@
     </div>
     
     <div class="config-section">
+        <h4 class="section-title"><i class="fas fa-car-battery me-2"></i>Battery Monitor (Victron)</h4>
+        <p class="text-muted">
+            Optional integration with a
+            <a href="https://github.com/MarekWo/victron-bm-webui" target="_blank" rel="noopener">victron-bm-webui</a>
+            instance. It supplies real battery data (voltage, current, state of charge, estimated
+            runtime) and a direct answer to "is mains actually gone?" &mdash; so a network outage
+            that takes all sentinel hosts offline no longer looks like a power failure.
+            If the service is unreachable or its readings go stale, the server silently falls
+            back to sentinel-based detection.
+        </p>
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="battery_enabled" name="battery_enabled" value="true" {% if pm_config.get('BATTERY_ENABLED') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="battery_enabled">Enable Battery Monitor Integration</label>
+                </div>
+                <div class="form-text">When disabled, nothing changes &mdash; the server uses sentinel hosts only.</div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <label for="battery_api_url" class="form-label">Battery Monitor URL</label>
+                <input type="text" class="form-control" id="battery_api_url" name="battery_api_url" placeholder="http://localhost:8088" value="{{ pm_config.get('BATTERY_API_URL', 'http://localhost:8088') }}">
+                <div class="form-text">Base URL of the victron-bm-webui instance.</div>
+            </div>
+            <div class="col-md-2 mb-3">
+                <label for="battery_api_timeout" class="form-label">Timeout (s)</label>
+                <input type="number" class="form-control" id="battery_api_timeout" name="battery_api_timeout" min="1" max="30" value="{{ pm_config.get('BATTERY_API_TIMEOUT', '5') }}">
+            </div>
+            <div class="col-md-2 mb-3">
+                <label for="battery_max_data_age" class="form-label">Max Data Age (s)</label>
+                <input type="number" class="form-control" id="battery_max_data_age" name="battery_max_data_age" min="15" max="600" value="{{ pm_config.get('BATTERY_MAX_DATA_AGE', '60') }}">
+                <div class="form-text">Older readings are rejected.</div>
+            </div>
+        </div>
+
+        <h5 class="mt-3"><i class="fas fa-flask text-warning me-2"></i>Battery Simulation (testing)</h5>
+        <p class="text-muted">
+            Overlays fixed values on top of the real reading, so shutdown thresholds can be
+            exercised without actually draining the battery. Leave a field empty to keep the
+            real value. Independent of Power Outage Simulation above.
+        </p>
+        <div class="row">
+            <div class="col-md-2 mb-3">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="battery_simulation" name="battery_simulation" value="true" {% if pm_config.get('BATTERY_SIMULATION') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="battery_simulation">Enable</label>
+                </div>
+            </div>
+            <div class="col-md-2 mb-3">
+                <label for="battery_sim_ac_power" class="form-label">Mains present</label>
+                <select class="form-select" id="battery_sim_ac_power" name="battery_sim_ac_power">
+                    <option value="" {% if not pm_config.get('BATTERY_SIM_AC_POWER') %}selected{% endif %}>(real value)</option>
+                    <option value="true" {% if pm_config.get('BATTERY_SIM_AC_POWER') == 'true' %}selected{% endif %}>true</option>
+                    <option value="false" {% if pm_config.get('BATTERY_SIM_AC_POWER') == 'false' %}selected{% endif %}>false</option>
+                </select>
+            </div>
+            <div class="col-md-2 mb-3">
+                <label for="battery_sim_soc" class="form-label">SoC (%)</label>
+                <input type="number" step="0.1" min="0" max="100" class="form-control" id="battery_sim_soc" name="battery_sim_soc" value="{{ pm_config.get('BATTERY_SIM_SOC', '') }}">
+            </div>
+            <div class="col-md-2 mb-3">
+                <label for="battery_sim_voltage" class="form-label">Voltage (V)</label>
+                <input type="number" step="0.01" class="form-control" id="battery_sim_voltage" name="battery_sim_voltage" value="{{ pm_config.get('BATTERY_SIM_VOLTAGE', '') }}">
+            </div>
+            <div class="col-md-2 mb-3">
+                <label for="battery_sim_current" class="form-label">Current (A)</label>
+                <input type="number" step="0.01" class="form-control" id="battery_sim_current" name="battery_sim_current" value="{{ pm_config.get('BATTERY_SIM_CURRENT', '') }}">
+            </div>
+            <div class="col-md-2 mb-3">
+                <label for="battery_sim_remaining" class="form-label">Runtime (min)</label>
+                <input type="number" min="0" class="form-control" id="battery_sim_remaining" name="battery_sim_remaining" value="{{ pm_config.get('BATTERY_SIM_REMAINING', '') }}">
+            </div>
+        </div>
+    </div>
+
+    <div class="config-section">
         <h4 class="section-title"><i class="fas fa-bell me-2"></i>Notification Settings</h4>
         <p class="text-muted">Select which events should trigger an email notification.</p>
         <div class="row">
@@ -166,6 +241,12 @@
 <form method="POST" action="{{ url_for('test_smtp') }}" class="d-inline-block ms-2">
     <button type="submit" class="btn btn-secondary btn-lg">
         <i class="fas fa-paper-plane me-1"></i> Send Test Email
+    </button>
+</form>
+
+<form method="POST" action="{{ url_for('test_battery_connection') }}" class="d-inline-block ms-2">
+    <button type="submit" class="btn btn-secondary btn-lg">
+        <i class="fas fa-car-battery me-1"></i> Test Battery Monitor
     </button>
 </form>
 </div>

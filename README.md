@@ -47,6 +47,7 @@ The logic is simple but effective:
   * **Unified Configuration:** Single configuration file (`power_manager.conf`) manages all aspects of the system.
   * **Robust Logging:** Includes built-in log rotation and optional, configurable forwarding to a central syslog server like Graylog.
   * **Email Notifications:** Receive real-time alerts for critical events like power outages, power restoration, client status changes, and application errors.
+  * **Optional Battery Monitor Integration:** Read live battery data (voltage, current, state of charge, estimated runtime) from a [victron-bm-webui](https://github.com/MarekWo/victron-bm-webui) instance, for power-state detection that doesn't depend solely on sentinel hosts.
 
 -----
 
@@ -406,6 +407,36 @@ This endpoint allows UPS clients to report their current status back to the serv
     }
     ```
 
+#### `GET /battery`
+
+Returns the latest battery reading from the Victron monitor, as captured by `power_manager.py`. See [Battery Monitor Integration](#battery-monitor-integration-optional).
+
+  * **Returns:** The battery section of the current power state. When the integration is disabled, unreachable, or the reading is stale, `available` is `false` and `error` explains why.
+
+**Example Response:**
+
+```json
+{
+  "enabled": true,
+  "available": true,
+  "url": "http://localhost:8088",
+  "simulation": false,
+  "voltage": 13.76,
+  "current": 0.105,
+  "power": 1.44,
+  "soc": 100.0,
+  "remaining_mins": null,
+  "temperature": 28.0,
+  "ac_power": true,
+  "ac_power_since": "2026-08-01T09:14:00+00:00",
+  "ac_power_inferred": false,
+  "connected": true,
+  "last_update": "2026-08-03T10:47:56.760037+00:00",
+  "data_age_seconds": 3.2,
+  "updated_at": "2026-08-03T10:47:59Z"
+}
+```
+
 #### `GET /upsc`
 
 This endpoint provides live status information from the NUT server, equivalent to running the `upsc` command locally, but with clean, nested JSON output.
@@ -448,6 +479,55 @@ The `simulation` field in the `ups` section indicates the current power outage s
 - `true`: Simulation mode active - UPS status is artificially set for testing purposes
 
 This field is read from the `POWER_SIMULATION_MODE` parameter in `power_manager.conf` and allows UPS clients to distinguish between real power outages and simulated ones for testing.
+
+-----
+
+### Battery Monitor Integration (Optional)
+
+The sentinel-host approach answers one question — "are the devices on grid power still reachable?" — and infers a power outage from the answer. That works, but it has two blind spots:
+
+1. **A network failure looks exactly like a power failure.** If the router or switch feeding your sentinels reboots, all of them go unreachable at once and the server declares an outage while mains is perfectly fine.
+2. **It knows nothing about remaining capacity.** Once an outage is declared, the only differentiator between clients is a fixed timer.
+
+If you have a Victron battery monitor (e.g. a BMV-712 Smart) on the UPS battery, [victron-bm-webui](https://github.com/MarekWo/victron-bm-webui) can supply both missing pieces: a direct reading of whether the battery is being charged or discharged, and the actual state of charge.
+
+**This integration is entirely optional.** With `BATTERY_ENABLED="false"` (the default) nothing about the server's behaviour changes. When enabled, it is still never load-bearing: if the battery service is unreachable, its BLE link is down, or its readings go stale, the server logs a warning and silently falls back to sentinel-based detection.
+
+#### Setup
+
+1. Install and run [victron-bm-webui](https://github.com/MarekWo/victron-bm-webui) — ideally on the same Docker host, so it is reachable at `http://localhost:8088`.
+2. Verify it is serving data, including the mains state:
+
+    ```bash
+    curl -s http://localhost:8088/api/v1/status | jq '.ac_power, .voltage, .soc'
+    ```
+
+3. In the Web GUI, open **Configuration → Battery Monitor (Victron)**, tick **Enable Battery Monitor Integration**, set the URL, and save.
+4. Click **Test Battery Monitor** to confirm the server can read it, then check the **Battery Monitor** panel on the dashboard.
+
+Equivalent settings in `config/power_manager.conf`:
+
+```bash
+BATTERY_ENABLED="true"
+BATTERY_API_URL="http://localhost:8088"
+BATTERY_API_TIMEOUT="5"          # HTTP timeout, seconds
+BATTERY_MAX_DATA_AGE="60"        # Readings older than this are rejected as stale
+```
+
+Older victron-bm-webui versions do not report `ac_power` themselves. The server detects this and derives the mains state locally from voltage and current, using `BATTERY_AC_FALLBACK_VOLTAGE` and `BATTERY_AC_DISCHARGE_CURRENT`; the dashboard marks such readings as *Inferred*. Upgrading victron-bm-webui is the better fix, since it applies hysteresis and debounce across readings rather than judging each one in isolation.
+
+#### Testing without draining the battery
+
+Battery simulation overlays fixed values on top of the real reading, so thresholds can be exercised on demand. It works independently of Power Outage Simulation, and the dashboard shows a **Simulated** badge whenever it is active.
+
+```bash
+BATTERY_SIMULATION="true"
+BATTERY_SIM_AC_POWER="false"     # Pretend mains is gone
+BATTERY_SIM_SOC="24"             # Pretend the battery is at 24%
+BATTERY_SIM_VOLTAGE=""           # Empty = keep the real value
+BATTERY_SIM_CURRENT=""
+BATTERY_SIM_REMAINING=""
+```
 
 -----
 

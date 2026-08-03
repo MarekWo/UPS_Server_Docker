@@ -22,7 +22,8 @@ from werkzeug.exceptions import BadRequest
 
 # Add the current directory to Python path to import modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from api import API_TOKEN, get_ups_name, get_server_ip
+from api import API_TOKEN, get_ups_name, get_server_ip, read_power_state
+from battery_monitor import BatteryMonitor
 
 # Import version information
 try:
@@ -48,6 +49,23 @@ WAKEONLAN_CMD = "/usr/bin/wakeonlan"
 CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
 
 # --- Helper Functions ---
+
+def get_battery_section():
+    """Battery data from the power manager snapshot, shaped for the dashboard.
+
+    Always returns a dict, so templates and JS never have to null-check.
+    """
+    state = read_power_state()
+    if state is None:
+        return {
+            'enabled': False,
+            'available': False,
+            'error': 'No fresh power state available from the power manager.',
+        }
+
+    battery = dict(state.get('battery', {}))
+    battery['updated_at'] = state.get('updated_at')
+    return battery
 
 def get_client_statuses():
     """Reads the client status file."""
@@ -122,6 +140,26 @@ def write_power_manager_config(config, wake_hosts, schedules):
             if key in config:
                  f.write(f"{key}=\"{config[key]}\"\n")
         
+        f.write("\n# === VICTRON BATTERY MONITOR (VBM) INTEGRATION ===\n")
+        battery_keys = [
+            'BATTERY_ENABLED', 'BATTERY_API_URL', 'BATTERY_API_TIMEOUT',
+            'BATTERY_MAX_DATA_AGE', 'BATTERY_AC_FALLBACK_VOLTAGE',
+            'BATTERY_AC_DISCHARGE_CURRENT',
+        ]
+        for key in battery_keys:
+            if key in config:
+                f.write(f"{key}=\"{config[key]}\"\n")
+
+        # Simulation overrides: an empty value means "use the real reading",
+        # so only write the ones that are actually set.
+        battery_sim_keys = [
+            'BATTERY_SIMULATION', 'BATTERY_SIM_AC_POWER', 'BATTERY_SIM_SOC',
+            'BATTERY_SIM_VOLTAGE', 'BATTERY_SIM_CURRENT', 'BATTERY_SIM_REMAINING',
+        ]
+        for key in battery_sim_keys:
+            if key in config and config[key]:
+                f.write(f"{key}=\"{config[key]}\"\n")
+
         f.write("\n# === SMTP NOTIFICATIONS ===\n")
         smtp_keys = [
             'SMTP_SERVER', 'SMTP_PORT', 'SMTP_USE_TLS', 'SMTP_USER', 'SMTP_PASSWORD',
@@ -321,10 +359,14 @@ def index():
         # Get client statuses
         client_statuses = get_client_statuses()
 
+        # Get battery data (empty dict when the integration is off)
+        battery = get_battery_section()
+
         # Get version information
         version_info = get_version_info()
 
         return render_template('dashboard.html',
+                             battery=battery,
                              pm_config=pm_config,
                              wake_hosts=wake_hosts,
                              ups_clients=ups_clients,
@@ -379,6 +421,23 @@ def save_main_config():
         if 'UPS_STATE_FILE' not in pm_config:
             pm_config['UPS_STATE_FILE'] = request.form.get('ups_state_file', '/var/run/nut/virtual.device')
 
+        # --- Update battery monitor (VBM) integration ---
+        pm_config['BATTERY_ENABLED'] = 'true' if 'battery_enabled' in request.form else 'false'
+        pm_config['BATTERY_API_URL'] = request.form.get(
+            'battery_api_url', 'http://localhost:8088').strip()
+        pm_config['BATTERY_API_TIMEOUT'] = request.form.get('battery_api_timeout', '5')
+        pm_config['BATTERY_MAX_DATA_AGE'] = request.form.get('battery_max_data_age', '60')
+
+        pm_config['BATTERY_SIMULATION'] = 'true' if 'battery_simulation' in request.form else 'false'
+        for form_field, config_key in (
+            ('battery_sim_ac_power', 'BATTERY_SIM_AC_POWER'),
+            ('battery_sim_soc', 'BATTERY_SIM_SOC'),
+            ('battery_sim_voltage', 'BATTERY_SIM_VOLTAGE'),
+            ('battery_sim_current', 'BATTERY_SIM_CURRENT'),
+            ('battery_sim_remaining', 'BATTERY_SIM_REMAINING'),
+        ):
+            pm_config[config_key] = request.form.get(form_field, '').strip()
+
         # --- Update SMTP config ---
         pm_config['SMTP_SERVER'] = request.form.get('smtp_server', '')
         pm_config['SMTP_PORT'] = request.form.get('smtp_port', '')
@@ -409,6 +468,12 @@ def save_main_config():
         if not validate_ip(pm_config['DEFAULT_BROADCAST_IP']):
             flash('Invalid Default Broadcast IP address', 'error')
             return redirect(url_for('config'))
+
+        if pm_config['BATTERY_ENABLED'] == 'true':
+            battery_url = pm_config['BATTERY_API_URL']
+            if not battery_url.startswith(('http://', 'https://')):
+                flash('Battery Monitor URL must start with http:// or https://', 'error')
+                return redirect(url_for('config'))
 
         if pm_config.get('SMTP_RECIPIENTS') and not validate_email_list(pm_config['SMTP_RECIPIENTS']):
              flash('Invalid email address format in Recipients field.', 'error')
@@ -719,6 +784,36 @@ def get_status():
 def get_client_statuses_json():
     """Endpoint to get current client statuses as JSON."""
     return jsonify(get_client_statuses())
+
+@app.route('/battery_status')
+def get_battery_status_json():
+    """Endpoint to get the latest battery reading for the dashboard panel."""
+    return jsonify(get_battery_section())
+
+@app.route('/test_battery', methods=['POST'])
+def test_battery_connection():
+    """Probe the configured Victron battery monitor and report what we find."""
+    try:
+        pm_config, _, _ = read_power_manager_config()
+        result = BatteryMonitor(pm_config).check_health()
+    except Exception as e:
+        result = {'enabled': False, 'reachable': False, 'error': str(e)}
+
+    if result.get('error'):
+        flash(f"Battery monitor test failed: {result['error']}", 'danger')
+    else:
+        status = result.get('status') or {}
+        mains = {True: 'mains OK', False: 'ON BATTERY', None: 'mains unknown'}[
+            status.get('ac_power')
+        ]
+        flash(
+            f"Battery monitor OK - {status.get('voltage')}V, "
+            f"SoC {status.get('soc')}%, {mains} "
+            f"(reading {status.get('data_age_seconds')}s old).",
+            'success',
+        )
+
+    return redirect(url_for('config'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80, debug=True)

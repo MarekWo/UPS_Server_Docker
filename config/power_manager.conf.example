@@ -29,6 +29,53 @@ API_TOKEN="your_super_secret_api_token"
 # Valid values: "true" or "false".
 POWER_SIMULATION_MODE="false"
 
+# === VICTRON BATTERY MONITOR (VBM) INTEGRATION ===
+#
+# Optional. When enabled, the server reads live battery data (voltage, current,
+# state of charge, estimated runtime) from a victron-bm-webui instance:
+# https://github.com/MarekWo/victron-bm-webui
+#
+# This gives two things the sentinel hosts cannot:
+#   1. A direct answer to "is mains actually gone?" - a network outage that
+#      takes all sentinels offline no longer looks like a power failure.
+#   2. Real remaining capacity, so each host can be shut down at its own
+#      state-of-charge threshold instead of on a fixed timer.
+#
+# The integration is always optional and never load-bearing: if the service is
+# down, unreachable or serving stale readings, the server silently falls back
+# to sentinel-based detection.
+
+# Master switch for the whole integration.
+BATTERY_ENABLED="false"
+
+# Base URL of the victron-bm-webui instance. With network_mode: host both
+# containers share the host network, so localhost works.
+BATTERY_API_URL="http://localhost:8088"
+
+# HTTP timeout in seconds for each request to the battery monitor.
+BATTERY_API_TIMEOUT="5"
+
+# Readings older than this (seconds) are rejected as stale, triggering the
+# fallback to sentinel logic. The BLE device is normally read every 10s.
+BATTERY_MAX_DATA_AGE="60"
+
+# Fallback mains detection, used ONLY when the victron-bm-webui instance is too
+# old to report `ac_power` itself. Newer versions do this properly (with
+# hysteresis and debounce) and these values are then ignored.
+BATTERY_AC_FALLBACK_VOLTAGE="13.50"
+BATTERY_AC_DISCHARGE_CURRENT="-1.0"
+
+# --- Battery simulation (for testing) ---
+# Overlays fixed values on top of the real reading, so shutdown thresholds can
+# be exercised without actually draining the battery. Leave a value empty to
+# keep the real one. Works independently of POWER_SIMULATION_MODE.
+BATTERY_SIMULATION="false"
+BATTERY_SIM_AC_POWER=""       # true | false
+BATTERY_SIM_SOC=""            # percent, e.g. 25
+BATTERY_SIM_VOLTAGE=""        # volts, e.g. 11.9
+BATTERY_SIM_CURRENT=""        # amps, e.g. -30
+BATTERY_SIM_REMAINING=""      # minutes, e.g. 20
+
 # === SMTP NOTIFICATIONS ===
 # SMTP_SERVER="smtp.example.com"
 # SMTP_PORT="587"
