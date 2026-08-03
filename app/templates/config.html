@@ -343,7 +343,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editWakeHost('{{ section }}', '{{ host.get('NAME', '') }}', '{{ host.get('IP', '') }}', '{{ host.get('MAC', '') }}', '{{ host.get('BROADCAST_IP', '') }}', '{{ host.get('SHUTDOWN_DELAY_MINUTES', '') }}', '{{ host.get('AUTO_WOL', 'true') }}', '{{ host.get('IGNORE_SIMULATION', 'false') }}')" title="Edit">
+                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editWakeHost('{{ section }}')" title="Edit">
                                 <i class="fas fa-edit"></i>
                             </button>
                             <form method="POST" action="{{ url_for('delete_wake_host', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete host {{ host.get('NAME', section) }}?')">
@@ -389,7 +389,7 @@
                     </span>
                 </div>
                 <div class="mobile-card-actions">
-                    <button type="button" class="btn btn-warning btn-sm me-2" onclick="editWakeHost('{{ section }}', '{{ host.get('NAME', '') }}', '{{ host.get('IP', '') }}', '{{ host.get('MAC', '') }}', '{{ host.get('BROADCAST_IP', '') }}', '{{ host.get('SHUTDOWN_DELAY_MINUTES', '') }}', '{{ host.get('AUTO_WOL', 'true') }}', '{{ host.get('IGNORE_SIMULATION', 'false') }}')" title="Edit">
+                    <button type="button" class="btn btn-warning btn-sm me-2" onclick="editWakeHost('{{ section }}')" title="Edit">
                         <i class="fas fa-edit me-1"></i> Edit
                     </button>
                     <form method="POST" action="{{ url_for('delete_wake_host', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete host {{ host.get('NAME', section) }}?')">
@@ -544,6 +544,56 @@
 </div>
 
 
+{% macro battery_host_fields(prefix) %}
+<hr>
+<h6><i class="fas fa-car-battery me-2"></i>Battery Monitor</h6>
+<p class="text-muted small">
+    Only used when the battery monitor integration is enabled. Leave a threshold empty
+    to inherit the global default.
+</p>
+<div class="mb-3">
+    <label for="{{ prefix }}_power_source" class="form-label">Power Source</label>
+    <select class="form-select" id="{{ prefix }}_power_source" name="power_source">
+        <option value="sentinel">Sentinel hosts only (default)</option>
+        <option value="battery">Battery monitor</option>
+        <option value="both">Both must agree (most conservative)</option>
+    </select>
+    <div class="form-text">
+        Which source decides this host's power state. <strong>Battery</strong> falls back to the
+        sentinel hosts automatically if battery data is unavailable. <strong>Both</strong> only
+        declares an outage when the two agree, so a network fault cannot trigger a shutdown.
+    </div>
+</div>
+<div class="row">
+    <div class="col-6 mb-3">
+        <label for="{{ prefix }}_shutdown_soc" class="form-label">Shutdown SoC (%)</label>
+        <input type="number" step="1" min="0" max="100" class="form-control" id="{{ prefix }}_shutdown_soc" name="shutdown_soc">
+        <div class="form-text">Shut down below this charge.</div>
+    </div>
+    <div class="col-6 mb-3">
+        <label for="{{ prefix }}_wol_min_soc" class="form-label">WoL Min SoC (%)</label>
+        <input type="number" step="1" min="0" max="100" class="form-control" id="{{ prefix }}_wol_min_soc" name="wol_min_soc">
+        <div class="form-text">Don't wake until the battery reaches this.</div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-6 mb-3">
+        <label for="{{ prefix }}_shutdown_voltage" class="form-label">Shutdown Voltage (V)</label>
+        <input type="number" step="0.1" class="form-control" id="{{ prefix }}_shutdown_voltage" name="shutdown_voltage">
+    </div>
+    <div class="col-6 mb-3">
+        <label for="{{ prefix }}_critical_voltage" class="form-label">Critical Voltage (V)</label>
+        <input type="number" step="0.1" class="form-control" id="{{ prefix }}_critical_voltage" name="critical_voltage">
+        <div class="form-text">Shut down immediately below this.</div>
+    </div>
+</div>
+<div class="mb-3">
+    <label for="{{ prefix }}_min_runtime_minutes" class="form-label">Min Runtime (minutes)</label>
+    <input type="number" step="1" min="0" class="form-control" id="{{ prefix }}_min_runtime_minutes" name="min_runtime_minutes">
+    <div class="form-text">Shut down when the estimated runtime drops to this. 0 or empty disables the rule.</div>
+</div>
+{% endmacro %}
+
 <div class="modal fade" id="addWakeHostModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -588,6 +638,7 @@
                         <label class="form-check-label" for="add_ignore_simulation">Do not shutdown in Power Outage Simulation mode</label>
                         <div class="form-text">If enabled, this UPS client will ignore simulated power outages and continue running.</div>
                     </div>
+                    {{ battery_host_fields('add') }}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -638,6 +689,7 @@
                         <label class="form-check-label" for="edit_ignore_simulation">Do not shutdown in Power Outage Simulation mode</label>
                         <div class="form-text">If enabled, this UPS client will ignore simulated power outages and continue running.</div>
                     </div>
+                    {{ battery_host_fields('edit') }}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -724,14 +776,36 @@
 {% block extra_scripts %}
 <script>
 // Scripts for Wake Host Management
-function editWakeHost(section, name, ip, mac, broadcastIp, shutdownDelay, autoWol, ignoreSimulation) {
-    document.getElementById('edit_name').value = name;
-    document.getElementById('edit_ip').value = ip;
-    document.getElementById('edit_mac').value = mac;
-    document.getElementById('edit_broadcast_ip').value = broadcastIp;
-    document.getElementById('edit_shutdown_delay').value = shutdownDelay;
-    document.getElementById('edit_auto_wol').checked = (autoWol === 'true');
-    document.getElementById('edit_ignore_simulation').checked = (ignoreSimulation === 'true');
+const wakeHostsData = {{ wake_hosts|tojson }};
+
+// Config key -> form field id suffix. Every editable per-host setting lives
+// here, so adding a field is a one-line change rather than another positional
+// argument threaded through two call sites.
+const HOST_TEXT_FIELDS = {
+    'NAME': 'name',
+    'IP': 'ip',
+    'MAC': 'mac',
+    'BROADCAST_IP': 'broadcast_ip',
+    'SHUTDOWN_DELAY_MINUTES': 'shutdown_delay',
+    'SHUTDOWN_SOC': 'shutdown_soc',
+    'SHUTDOWN_VOLTAGE': 'shutdown_voltage',
+    'CRITICAL_VOLTAGE': 'critical_voltage',
+    'MIN_RUNTIME_MINUTES': 'min_runtime_minutes',
+    'WOL_MIN_SOC': 'wol_min_soc'
+};
+
+function editWakeHost(section) {
+    const host = wakeHostsData[section] || {};
+
+    for (const [key, field] of Object.entries(HOST_TEXT_FIELDS)) {
+        const el = document.getElementById('edit_' + field);
+        if (el) el.value = host[key] !== undefined ? host[key] : '';
+    }
+
+    document.getElementById('edit_auto_wol').checked = (host.AUTO_WOL || 'true') === 'true';
+    document.getElementById('edit_ignore_simulation').checked = host.IGNORE_SIMULATION === 'true';
+    document.getElementById('edit_power_source').value = host.POWER_SOURCE || 'sentinel';
+
     document.getElementById('editWakeHostForm').action = '/edit_wake_host/' + section;
     new bootstrap.Modal(document.getElementById('editWakeHostModal')).show();
 }

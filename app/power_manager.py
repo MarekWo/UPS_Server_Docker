@@ -587,7 +587,8 @@ class PowerManager:
             else:
                 # Real power failure - send regular power fail notification
                 self.notifier.send("POWER_FAIL", "[UPS] ALERT: Power Outage Detected",
-                                 "All sentinel hosts are offline. System is on UPS power.")
+                                 "All sentinel hosts are offline. System is on UPS power."
+                                 + self._battery_context() + self._shutdown_plan())
 
         # Always save state to persist interruption flags (even if state hasn't changed)
         should_save = state_changed or self.simulation_interrupted
@@ -656,7 +657,8 @@ class PowerManager:
             else:
                 # Previous state was real power failure - send power restored notification
                 self.notifier.send("POWER_RESTORED", "[UPS] INFO: Power Restored",
-                                 f"Power restored after ~{duration} mins. Waiting {wol_delay} mins for WoL.")
+                                 f"Power restored after ~{duration} mins. Waiting {wol_delay} mins for WoL."
+                                 + self._battery_context())
 
             # Save state - use special state if we restored simulation mode
             if self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true' and self.simulation_interrupted:
@@ -668,31 +670,29 @@ class PowerManager:
         elif self.power_state == "POWER_RESTORED":
             if self.power_state_timestamp and (now_ts - self.power_state_timestamp) >= (wol_delay * 60):
                 log.info("WoL delay passed. Initiating wake-up sequence.")
-                self._initiate_wol()
-
-                # Clear all state files and reset interruption tracking
-                self._clear_file(STATE_FILE)
-                self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
-                self.simulation_interrupted = False
-                self.interrupted_schedule_info = None
+                self._complete_wol_cycle(now_ts, wol_delay)
 
         elif self.power_state == "POWER_RESTORED_SIM":
             # Special state: power was restored and simulation was re-activated
             # We need to wait for WoL delay even though we're currently in simulation mode
             if self.power_state_timestamp and (now_ts - self.power_state_timestamp) >= (wol_delay * 60):
                 log.info("WoL delay passed after simulation restoration. Initiating wake-up sequence.")
-                self._initiate_wol()
+                self._complete_wol_cycle(now_ts, wol_delay)
 
-                # Clear interruption flags now that WoL is done
-                self.simulation_interrupted = False
-                self.interrupted_schedule_info = None
-                self._clear_file(STATE_FILE)
-                self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
+    def _initiate_wol(self, force=False):
+        """Initiate Wake-on-LAN sequence with error handling and status tracking.
 
-    def _initiate_wol(self):
-        """Initiate Wake-on-LAN sequence with comprehensive error handling and status tracking."""
+        Args:
+            force: Skip the battery charge gate. Used once WOL_MAX_WAIT_MINUTES
+                   has elapsed, so a stuck battery monitor cannot keep hosts
+                   asleep indefinitely.
+
+        Returns:
+            List of host names whose wake-up was deferred waiting for charge.
+        """
         default_broadcast = self.config.get('DEFAULT_BROADCAST_IP')
         woken_hosts = []
+        deferred_hosts = []
 
         # Check if we're currently in simulation mode
         is_simulation_active = self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true'
@@ -714,6 +714,18 @@ class PowerManager:
             if not ip or not mac:
                 log.warning(f"Skipping WoL for {params.get('NAME', 'unknown')} - missing IP or MAC")
                 continue
+
+            # Waking servers onto a battery that is still nearly empty just
+            # means shutting them down again minutes later.
+            if not force:
+                allowed, wol_reason = self.evaluator.should_wol(params, self.battery_status)
+                if not allowed:
+                    log.info(
+                        f"Deferring WoL for {params.get('NAME')} ({ip}): {wol_reason}"
+                    )
+                    self._update_client_status_json(ip, "wol_deferred")
+                    deferred_hosts.append(params.get('NAME', ip))
+                    continue
 
             try:
                 # Check if host is already online
@@ -743,8 +755,85 @@ class PowerManager:
                 self._update_client_status_json(ip, "wol_error")
 
         if woken_hosts:
-            self.notifier.send("POWER_RESTORED", "[UPS] INFO: WoL Sequence Initiated",
-                               "Sent WoL signals to:\n\n" + "\n".join(woken_hosts))
+            body = "Sent WoL signals to:\n\n" + "\n".join(woken_hosts)
+            if deferred_hosts:
+                body += ("\n\nStill waiting for the battery to charge:\n\n"
+                         + "\n".join(f"- {h}" for h in deferred_hosts))
+            body += self._battery_context()
+            self.notifier.send("POWER_RESTORED", "[UPS] INFO: WoL Sequence Initiated", body)
+
+        return deferred_hosts
+
+    def _battery_context(self):
+        """Battery summary to append to notification bodies, or '' if unavailable."""
+        if not self.battery_monitor.enabled:
+            return ""
+        if not self.battery_status:
+            return ("\n\nBattery monitor: unavailable ("
+                    f"{self.battery_monitor.last_error or 'unknown reason'}) - "
+                    "decisions fell back to sentinel hosts.")
+        return f"\n\nBattery: {self.battery_status.describe()}"
+
+    def _shutdown_plan(self):
+        """Per-host shutdown thresholds, for the power failure notification.
+
+        During an outage the useful question is not "is the power out" but
+        "which machine goes down next, and at what point" - so spell it out.
+        """
+        if not self.battery_monitor.enabled or not self.battery_status:
+            return ""
+
+        lines = []
+        for section, params in self.wake_hosts.items():
+            if 'SHUTDOWN_DELAY_MINUTES' not in params:
+                continue
+            name = params.get('NAME', section)
+            source = self.evaluator.host_source(params)
+            if source == 'sentinel':
+                lines.append(
+                    f"- {name}: after {params.get('SHUTDOWN_DELAY_MINUTES')} min (timer)"
+                )
+            else:
+                soc = self.evaluator.threshold(params, 'SHUTDOWN_SOC')
+                voltage = self.evaluator.threshold(params, 'SHUTDOWN_VOLTAGE')
+                lines.append(
+                    f"- {name}: at SoC {soc:.0f}% or {voltage:.2f}V ({source})"
+                )
+
+        if not lines:
+            return ""
+        return "\n\nShutdown plan:\n\n" + "\n".join(lines)
+
+    def _complete_wol_cycle(self, now_ts, wol_delay):
+        """Run the wake-up sequence and decide whether the cycle is finished.
+
+        Hosts gated on battery charge keep the POWER_RESTORED state alive so
+        they get another chance on the next 15s pass, up to WOL_MAX_WAIT_MINUTES.
+        """
+        max_wait = int(self.config.get('WOL_MAX_WAIT_MINUTES', 240))
+        waited = (now_ts - self.power_state_timestamp) // 60 if self.power_state_timestamp else 0
+        force = max_wait > 0 and waited >= max_wait
+
+        if force:
+            log.warning(
+                f"Waited {waited} min for the battery to charge (limit {max_wait} min) - "
+                "waking the remaining hosts anyway."
+            )
+
+        deferred = self._initiate_wol(force=force)
+
+        if deferred and not force:
+            log.info(
+                "WoL cycle still pending for: %s - will retry next check.",
+                ", ".join(deferred),
+            )
+            return False
+
+        self._clear_file(STATE_FILE)
+        self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
+        self.simulation_interrupted = False
+        self.interrupted_schedule_info = None
+        return True
 
     def _update_client_status_json(self, ip, status):
         """Update client status JSON with atomic writes and compatible format."""

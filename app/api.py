@@ -342,8 +342,67 @@ def get_upsc_data():
             nested_data['ups'] = {}
         nested_data['ups']['simulation'] = False
 
+    # 6. --- Tailor the response to the calling client ---
+    apply_client_power_state(nested_data)
+
     app.logger.info(f"Successfully retrieved and parsed UPS status.")
     return jsonify(nested_data)
+
+
+def apply_client_power_state(nested_data):
+    """Replace the global UPS status with this client's own verdict.
+
+    The NUT virtual device carries a single status for the whole site. Once
+    hosts have individual battery thresholds that is no longer enough, so the
+    per-host verdict computed by power_manager.py is substituted here, based on
+    which client is asking.
+
+    `ups.status` deliberately keeps carrying only "OL" or "OB LB". UPS_monitor
+    v4.4.0 treats "OB LB" as "begin your shutdown countdown" and anything else
+    as "stand down"; the PowerShell client actively cancels a pending shutdown
+    on an unrecognised status. Reporting a bare "OB" here would be more correct
+    NUT semantics and would silently break both. The true state goes into the
+    additive fields alongside it instead, which older clients simply ignore.
+    """
+    client_ip = request.args.get('ip') or get_client_ip()
+
+    state = read_power_state()
+    if state is None:
+        app.logger.info("No fresh power state; serving the global UPS status.")
+        return
+
+    battery = state.get('battery', {})
+    if battery.get('available'):
+        # Standard NUT variable names, so anything already reading upsc output
+        # understands them without special-casing.
+        nested_data.setdefault('battery', {})
+        if battery.get('soc') is not None:
+            nested_data['battery']['charge'] = battery['soc']
+        if battery.get('voltage') is not None:
+            nested_data['battery']['voltage'] = battery['voltage']
+        if battery.get('current') is not None:
+            nested_data['battery']['current'] = battery['current']
+        if battery.get('remaining_mins') is not None:
+            nested_data['battery']['runtime'] = int(battery['remaining_mins']) * 60
+        nested_data['battery']['connected'] = battery.get('connected', False)
+
+    verdict = (state.get('hosts') or {}).get(client_ip)
+    if not verdict:
+        app.logger.info(
+            f"No per-host verdict for {client_ip}; serving the global UPS status."
+        )
+        return
+
+    nested_data['ups']['status'] = verdict['status']
+    nested_data['ups']['status_detail'] = verdict['detail']
+    nested_data['ups']['power_source'] = verdict['source']
+    nested_data['ups']['shutdown_reason'] = verdict['reason']
+    nested_data['ups']['decision_mode'] = verdict['mode']
+
+    app.logger.info(
+        f"Serving {client_ip} its own status {verdict['status']} "
+        f"(detail {verdict['detail']}, source {verdict['source']}): {verdict['reason']}"
+    )
 
 @app.route('/battery', methods=['GET'])
 def get_battery():

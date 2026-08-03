@@ -87,6 +87,11 @@ BATTERY_DEFAULT_SHUTDOWN_SOC="25"           # % - shut down
 BATTERY_DEFAULT_MIN_RUNTIME_MINUTES="0"     # min - 0 disables this rule
 BATTERY_DEFAULT_WOL_MIN_SOC="0"             # % - 0 disables the WoL gate
 
+# Safety net for the WoL charge gate: after this many minutes of waiting for
+# the battery to recover, hosts are woken regardless, so a stuck or failed
+# battery monitor cannot keep them asleep forever. 0 disables the limit.
+WOL_MAX_WAIT_MINUTES="240"
+
 # --- Battery simulation (for testing) ---
 # Overlays fixed values on top of the real reading, so shutdown thresholds can
 # be exercised without actually draining the battery. Leave a value empty to

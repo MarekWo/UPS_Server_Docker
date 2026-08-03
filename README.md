@@ -472,6 +472,32 @@ This endpoint provides live status information from the NUT server, equivalent t
 }
 ```
 
+**Per-client status:** when the battery monitor integration is enabled, `ups.status` is tailored to the calling client — identified by the `ip` query parameter, then `X-Forwarded-For`, then the source address. A host configured with battery thresholds is told `OB LB` when *its own* thresholds are crossed, not when the site-wide sentinel check trips. Unknown addresses get the global status, exactly as before.
+
+`ups.status` keeps carrying only `OL` or `OB LB`, because that is the contract `UPS_monitor` v4.4.0 understands. The richer picture arrives in additive fields that older clients simply ignore:
+
+```json
+{
+  "ups": {
+    "status": "OL",
+    "status_detail": "OB",
+    "simulation": false,
+    "power_source": "battery",
+    "shutdown_reason": "on battery, thresholds not reached (SoC 87.0% > 40.0%, ~142 min left)",
+    "decision_mode": "enforce"
+  },
+  "battery": {
+    "charge": 87.0,
+    "voltage": 12.41,
+    "current": -28.5,
+    "runtime": 8520,
+    "connected": true
+  }
+}
+```
+
+`status_detail` is the true NUT state (`OL`, `OB` or `OB LB`) — so `"status": "OL"` with `"status_detail": "OB"` means "running on battery, but this host still has margin". The `battery.*` keys use standard NUT variable names.
+
 **Simulation Status Field:**
 
 The `simulation` field in the `ups` section indicates the current power outage simulation status:
@@ -574,6 +600,19 @@ battery implies OL - mains present (13.76V, +0.10A, SoC 100.0%) (mode=observe)
 Leave it in observe mode for a few days, confirm the battery monitor tracks reality, then switch to `enforce`. A sensible rollout is to enable `POWER_SOURCE=battery` one host at a time, starting with the least critical one.
 
 Power outage simulation is unaffected by the decision mode — a simulated outage still exercises the real shutdown path in both modes.
+
+#### Holding back Wake-on-LAN until the battery has recovered
+
+Waking servers onto a battery that is still nearly empty just means shutting them down again minutes later. Set `WOL_MIN_SOC` on a host and it will not be woken until the battery reaches that charge **and** is actually charging (positive current):
+
+```bash
+WOL_MIN_SOC=95
+WOL_MAX_WAIT_MINUTES="240"   # global safety net, 0 disables the limit
+```
+
+Deferred hosts show as *Waiting for charge* on the dashboard and are retried every 15 seconds. `WOL_MAX_WAIT_MINUTES` is the escape hatch: after that long, they are woken regardless, so a failed battery monitor cannot keep them asleep indefinitely.
+
+Battery **voltage** is deliberately not used as a wake-up gate. Right after mains returns, the charger pushes voltage to 14.2–14.4 V even at 40% charge — so it would wave through exactly the case this is meant to prevent. State of charge is the honest signal.
 
 #### Testing without draining the battery
 

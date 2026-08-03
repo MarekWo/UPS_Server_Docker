@@ -148,6 +148,7 @@ def write_power_manager_config(config, wake_hosts, schedules):
             'BATTERY_DEFAULT_POWER_SOURCE', 'BATTERY_DEFAULT_CRITICAL_VOLTAGE',
             'BATTERY_DEFAULT_SHUTDOWN_VOLTAGE', 'BATTERY_DEFAULT_SHUTDOWN_SOC',
             'BATTERY_DEFAULT_MIN_RUNTIME_MINUTES', 'BATTERY_DEFAULT_WOL_MIN_SOC',
+            'WOL_MAX_WAIT_MINUTES',
         ]
         for key in battery_keys:
             if key in config:
@@ -531,6 +532,32 @@ def test_smtp():
     return redirect(url_for('config'))
 
 
+def apply_battery_host_fields(host):
+    """Copy the per-host battery settings from the submitted form into `host`.
+
+    An empty field means "inherit the global default", so the key is removed
+    rather than stored as an empty string - otherwise the evaluator would have
+    to treat '' as a missing threshold everywhere.
+    """
+    source = request.form.get('power_source', 'sentinel').strip().lower()
+    if source in ('battery', 'both'):
+        host['POWER_SOURCE'] = source
+    else:
+        host.pop('POWER_SOURCE', None)  # sentinel is the default; keep the file clean
+
+    for field, key in (
+        ('shutdown_soc', 'SHUTDOWN_SOC'),
+        ('shutdown_voltage', 'SHUTDOWN_VOLTAGE'),
+        ('critical_voltage', 'CRITICAL_VOLTAGE'),
+        ('min_runtime_minutes', 'MIN_RUNTIME_MINUTES'),
+        ('wol_min_soc', 'WOL_MIN_SOC'),
+    ):
+        value = request.form.get(field, '').strip()
+        if value:
+            host[key] = value
+        else:
+            host.pop(key, None)
+
 @app.route('/add_wake_host', methods=['POST'])
 def add_wake_host():
     """Add new wake host"""
@@ -570,7 +597,8 @@ def add_wake_host():
             wake_hosts[section_name]['BROADCAST_IP'] = broadcast_ip
         if shutdown_delay:
             wake_hosts[section_name]['SHUTDOWN_DELAY_MINUTES'] = shutdown_delay
-        
+        apply_battery_host_fields(wake_hosts[section_name])
+
         write_power_manager_config(pm_config, wake_hosts, schedules)
         flash(f'Host "{name}" added successfully!', 'success')
         
@@ -627,7 +655,9 @@ def edit_wake_host(section):
             wake_hosts[section]['SHUTDOWN_DELAY_MINUTES'] = shutdown_delay
         elif 'SHUTDOWN_DELAY_MINUTES' in wake_hosts[section]:
             del wake_hosts[section]['SHUTDOWN_DELAY_MINUTES']
-        
+
+        apply_battery_host_fields(wake_hosts[section])
+
         write_power_manager_config(pm_config, wake_hosts, schedules)
         flash(f'Host "{name}" updated successfully!', 'success')
         
