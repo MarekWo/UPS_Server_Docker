@@ -273,15 +273,20 @@ class PowerSourceEvaluator:
     def should_wol(self, host: dict, battery) -> tuple:
         """Whether it is safe to wake this host yet.
 
+        The gate is about the state of the battery, not about which source
+        decides this host's shutdowns. Every host draws from the same bank, and
+        waking the hungriest machine onto a nearly empty one is a bad idea
+        however that machine came to be off - often the hungriest machine is
+        precisely the one left on the sentinel source, because it is the
+        cheapest to shed early. So the gate applies whenever WOL_MIN_SOC is set
+        for a host and there is trustworthy battery data to judge by.
+
         Returns:
             (allowed: bool, reason: str)
         """
         min_soc = self.threshold(host, 'WOL_MIN_SOC')
         if min_soc <= 0:
             return True, "no minimum state of charge configured"
-
-        if self.host_source(host) == SOURCE_SENTINEL:
-            return True, "host does not use the battery monitor"
 
         if battery is None:
             return True, "no battery data - not holding the wake-up back"

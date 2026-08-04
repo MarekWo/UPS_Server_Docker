@@ -614,6 +614,8 @@ WOL_MAX_WAIT_MINUTES="240"   # global safety net, 0 disables the limit
 
 Deferred hosts show as *Waiting for charge* on the dashboard and are retried every 15 seconds. `WOL_MAX_WAIT_MINUTES` is the escape hatch: after that long, they are woken regardless, so a failed battery monitor cannot keep them asleep indefinitely.
 
+The gate applies to **every** host with `WOL_MIN_SOC` set, including hosts left on `POWER_SOURCE=sentinel`. It is about the state of the battery, not about which source decides shutdowns — and in practice the hungriest machine is often exactly the one kept on the sentinel source, because it is the cheapest to shed early. That makes it the one that most needs holding back until the bank has recovered. Setting the thresholds in reverse order of the shutdown sequence brings the most valuable host back first and the greediest one last.
+
 Battery **voltage** is deliberately not used as a wake-up gate. Right after mains returns, the charger pushes voltage to 14.2–14.4 V even at 40% charge — so it would wave through exactly the case this is meant to prevent. State of charge is the honest signal.
 
 #### Waking hosts the battery shut down on its own
