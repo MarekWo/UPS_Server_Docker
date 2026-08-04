@@ -16,7 +16,12 @@ from email.utils import formataddr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from battery_monitor import BatteryMonitor
-from power_source import PowerSourceEvaluator
+from power_source import (
+    PowerSourceEvaluator,
+    SOURCE_BATTERY,
+    SOURCE_SENTINEL,
+    STATUS_LOW_BATTERY,
+)
 
 # --- Constants ---
 APP_NAME = "PowerManager"
@@ -27,6 +32,7 @@ NOTIFICATION_STATE_FILE = "/var/run/nut/notification.state"
 CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
 CLIENT_NOTIFICATION_STATE_FILE = "/var/run/nut/client_notification.state"
 POWER_STATE_FILE = "/var/run/nut/power_state.json"
+BATTERY_WOL_STATE_FILE = "/var/run/nut/battery_wol.json"
 UPS_STATE_FILE_DEFAULT = "/var/run/nut/virtual.device"
 LOCK_FILE = "/var/run/nut/power_manager.lock"
 
@@ -690,7 +696,6 @@ class PowerManager:
         Returns:
             List of host names whose wake-up was deferred waiting for charge.
         """
-        default_broadcast = self.config.get('DEFAULT_BROADCAST_IP')
         woken_hosts = []
         deferred_hosts = []
 
@@ -727,32 +732,8 @@ class PowerManager:
                     deferred_hosts.append(params.get('NAME', ip))
                     continue
 
-            try:
-                # Check if host is already online
-                ping_result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip], 
-                                           capture_output=True, timeout=3)
-                
-                if ping_result.returncode != 0:
-                    broadcast = params.get('BROADCAST_IP', default_broadcast)
-                    log.info(f"Sending WoL to {params.get('NAME')} ({ip}) via {broadcast}.")
-                    
-                    # Send WoL packet and check result (improved from original)
-                    wol_result = subprocess.run([WAKEONLAN_CMD, "-i", broadcast, mac], 
-                                              capture_output=True, timeout=5)
-                    
-                    if wol_result.returncode == 0:
-                        self._update_client_status_json(ip, "wol_sent")
-                        woken_hosts.append(f"- {params.get('NAME')} ({ip})")
-                        log.info(f"WoL packet sent successfully to {params.get('NAME')} ({ip})")
-                    else:
-                        log.error(f"Failed to send WoL packet to {params.get('NAME')} ({ip}): {wol_result.stderr.decode()}")
-                        self._update_client_status_json(ip, "wol_failed")
-                else:
-                    log.info(f"Host {params.get('NAME')} ({ip}) is already online.")
-                    
-            except (subprocess.TimeoutExpired, OSError) as e:
-                log.error(f"Error during WoL process for {params.get('NAME')} ({ip}): {e}")
-                self._update_client_status_json(ip, "wol_error")
+            if self._wake_host(params) == 'sent':
+                woken_hosts.append(f"- {params.get('NAME')} ({ip})")
 
         if woken_hosts:
             body = "Sent WoL signals to:\n\n" + "\n".join(woken_hosts)
@@ -763,6 +744,45 @@ class PowerManager:
             self.notifier.send("POWER_RESTORED", "[UPS] INFO: WoL Sequence Initiated", body)
 
         return deferred_hosts
+
+    def _wake_host(self, params):
+        """Send a WoL packet to one host, unless it is already up.
+
+        Shared by both wake-up paths: the sentinel-driven cycle in
+        _initiate_wol() and the per-host battery cycle in _handle_battery_wol().
+
+        Returns:
+            'online' if the host answered a ping and no packet was needed,
+            'sent', 'failed' or 'error' otherwise.
+        """
+        ip, mac = params.get('IP'), params.get('MAC')
+        name = params.get('NAME', ip)
+        broadcast = params.get('BROADCAST_IP', self.config.get('DEFAULT_BROADCAST_IP'))
+
+        try:
+            ping_result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip],
+                                         capture_output=True, timeout=3)
+            if ping_result.returncode == 0:
+                log.info(f"Host {name} ({ip}) is already online.")
+                return 'online'
+
+            log.info(f"Sending WoL to {name} ({ip}) via {broadcast}.")
+            wol_result = subprocess.run([WAKEONLAN_CMD, "-i", broadcast, mac],
+                                        capture_output=True, timeout=5)
+
+            if wol_result.returncode == 0:
+                self._update_client_status_json(ip, "wol_sent")
+                log.info(f"WoL packet sent successfully to {name} ({ip})")
+                return 'sent'
+
+            log.error(f"Failed to send WoL packet to {name} ({ip}): {wol_result.stderr.decode()}")
+            self._update_client_status_json(ip, "wol_failed")
+            return 'failed'
+
+        except (subprocess.TimeoutExpired, OSError) as e:
+            log.error(f"Error during WoL process for {name} ({ip}): {e}")
+            self._update_client_status_json(ip, "wol_error")
+            return 'error'
 
     def _battery_context(self):
         """Battery summary to append to notification bodies, or '' if unavailable."""
@@ -945,6 +965,134 @@ class PowerManager:
 
         return verdicts
 
+    def _read_battery_wol_state(self):
+        """Load the per-host battery wake-up tracker, or {} if unusable."""
+        try:
+            with open(BATTERY_WOL_STATE_FILE, 'r') as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except FileNotFoundError:
+            return {}
+        except (IOError, json.JSONDecodeError) as e:
+            log.warning(f"Cannot read battery WoL state, starting fresh: {e}")
+            return {}
+
+    def _write_battery_wol_state(self, tracked):
+        """Persist the per-host battery wake-up tracker atomically."""
+        try:
+            temp_file = BATTERY_WOL_STATE_FILE + ".tmp"
+            with open(temp_file, 'w') as f:
+                json.dump(tracked, f, indent=2)
+            os.replace(temp_file, BATTERY_WOL_STATE_FILE)
+        except (IOError, OSError, TypeError) as e:
+            log.error(f"Cannot write battery WoL state: {e}")
+
+    def _handle_battery_wol(self, power_status, host_verdicts):
+        """Wake hosts that the battery rules shut down by themselves.
+
+        The POWER_FAIL/POWER_RESTORED machine is driven entirely by sentinel
+        pings, so it never sees an outage that only the battery monitor
+        noticed. Without this, a host shut down by its own state-of-charge
+        threshold - while the sentinels stayed reachable and every other host
+        kept running - would stay off until somebody pressed Wake, and nothing
+        would be logged to say so.
+
+        This is the per-host counterpart of that machine, and it deliberately
+        stands down whenever the sentinel-driven cycle has anything to do
+        (`self.power_state` set, or the sentinels reporting an outage), so the
+        two can never both own the same wake-up or send duplicate mail.
+        """
+        if power_status != "ONLINE" or self.power_state:
+            return
+
+        tracked = self._read_battery_wol_state()
+        original = json.dumps(tracked, sort_keys=True)
+        now_ts = int(datetime.now().timestamp())
+        wol_delay = int(self.config.get('WOL_DELAY_MINUTES', 5))
+        max_wait = int(self.config.get('WOL_MAX_WAIT_MINUTES', 240))
+
+        known_ips = set()
+
+        for section, params in self.wake_hosts.items():
+            ip = params.get('IP')
+            verdict = host_verdicts.get(ip)
+            if not verdict:
+                continue
+
+            # Sentinel-sourced hosts are the existing machine's business, and a
+            # host we cannot wake is not worth tracking.
+            if self.evaluator.host_source(params) == SOURCE_SENTINEL:
+                continue
+            if not params.get('MAC') or params.get('AUTO_WOL', 'true').lower() == 'false':
+                continue
+
+            known_ips.add(ip)
+            name = params.get('NAME', ip)
+            entry = tracked.get(ip)
+
+            # Still down as far as the battery is concerned.
+            if (verdict.get('status') == STATUS_LOW_BATTERY
+                    and verdict.get('source') == SOURCE_BATTERY):
+                if entry is None:
+                    tracked[ip] = {'down_since': now_ts, 'restored_at': None}
+                    log.info(
+                        "Battery rules shut down %s (%s) with the sentinels still up - "
+                        "this host is now owned by the battery wake-up cycle.", name, ip,
+                    )
+                elif entry.get('restored_at'):
+                    # Dropped back onto battery before we managed to wake it.
+                    entry['restored_at'] = None
+                    log.info("%s (%s) is back on battery - wake-up postponed.", name, ip)
+                continue
+
+            if entry is None:
+                continue
+
+            # The battery says this host may run again.
+            if not entry.get('restored_at'):
+                entry['restored_at'] = now_ts
+                log.info(
+                    "Mains back for %s (%s) - waking it in %d min.", name, ip, wol_delay,
+                )
+                continue
+
+            waited = (now_ts - entry['restored_at']) // 60
+            if waited < wol_delay:
+                continue
+
+            force = max_wait > 0 and waited >= max_wait
+            if force:
+                log.warning(
+                    "Waited %d min for the battery to charge before waking %s (limit %d min) - "
+                    "waking it anyway.", waited, name, max_wait,
+                )
+            else:
+                allowed, reason = self.evaluator.should_wol(params, self.battery_status)
+                if not allowed:
+                    log.info(f"Deferring WoL for {name} ({ip}): {reason}")
+                    self._update_client_status_json(ip, "wol_deferred")
+                    continue
+
+            result = self._wake_host(params)
+            if result in ('sent', 'online'):
+                del tracked[ip]
+                if result == 'sent':
+                    self.notifier.send(
+                        "POWER_RESTORED", "[UPS] INFO: WoL Sequence Initiated",
+                        f"Sent WoL signal to:\n\n- {name} ({ip})\n\n"
+                        "This host was shut down by the battery rules rather than by a "
+                        "sentinel outage, so it was woken on its own schedule."
+                        + self._battery_context()
+                    )
+
+        # Drop hosts that were removed from the config or switched to sentinel.
+        for ip in [ip for ip in tracked if ip not in known_ips]:
+            log.info("Dropping stale battery wake-up entry for %s.", ip)
+            del tracked[ip]
+
+        if json.dumps(tracked, sort_keys=True) != original:
+            self._write_battery_wol_state(tracked)
+
     def _write_power_state(self, power_status, host_verdicts=None):
         """Publish the current power picture for the API and Web GUI.
 
@@ -1072,7 +1220,13 @@ class PowerManager:
 
             self._poll_battery()
             power_status = self._determine_power_status()
-            self._write_power_state(power_status, self._evaluate_hosts(power_status))
+            host_verdicts = self._evaluate_hosts(power_status)
+            self._write_power_state(power_status, host_verdicts)
+
+            # Deliberately before the handlers below: it must see the state the
+            # cycle started with, so that it stands down the moment the
+            # sentinel-driven machine takes ownership of a wake-up.
+            self._handle_battery_wol(power_status, host_verdicts)
 
             # Special handling for POWER_RESTORED_SIM state:
             # Even if power_status is OFFLINE (due to simulation), we need to handle WoL
