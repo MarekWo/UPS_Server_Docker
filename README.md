@@ -540,7 +540,7 @@ BATTERY_API_TIMEOUT="5"          # HTTP timeout, seconds
 BATTERY_MAX_DATA_AGE="60"        # Readings older than this are rejected as stale
 ```
 
-Older victron-bm-webui versions do not report `ac_power` themselves. The server detects this and derives the mains state locally from voltage and current, using `BATTERY_AC_FALLBACK_VOLTAGE` and `BATTERY_AC_DISCHARGE_CURRENT`; the dashboard marks such readings as *Inferred*. Upgrading victron-bm-webui is the better fix, since it applies hysteresis and debounce across readings rather than judging each one in isolation.
+Older victron-bm-webui versions do not report `ac_power` themselves. The server detects this and derives the mains state locally from voltage and current, using `BATTERY_AC_FALLBACK_VOLTAGE`, `BATTERY_AC_DISCHARGE_CURRENT` and `BATTERY_AC_CHARGE_CURRENT`; the dashboard marks such readings as *Inferred*. Upgrading victron-bm-webui is the better fix, since it applies hysteresis and debounce across readings rather than judging each one in isolation.
 
 #### Choosing a power source per host
 
@@ -573,12 +573,14 @@ MAC=00:11:32:44:55:66
 SHUTDOWN_DELAY_MINUTES=0
 POWER_SOURCE=both
 SHUTDOWN_SOC=15           # Run the battery much further down
-CRITICAL_VOLTAGE=11.5
+CRITICAL_VOLTAGE=11.0
 MIN_RUNTIME_MINUTES=10
 WOL_MIN_SOC=95
 ```
 
 Thresholds are evaluated in order of how conclusive each signal is: `CRITICAL_VOLTAGE`, then `SHUTDOWN_SOC`, then `SHUTDOWN_VOLTAGE`, then `MIN_RUNTIME_MINUTES`. Any threshold left unset falls back to the corresponding `BATTERY_DEFAULT_*` value, and then to a built-in default.
+
+> **Set the voltage thresholds low.** They are backstops for when state of charge is unavailable or wrong — `SHUTDOWN_SOC` should be the rule that actually fires. Battery voltage collapses hard the moment load moves onto it: a ~100 Ah bank measured 13.78 V at rest and **12.23 V under a 56 A load while still at 99 % SoC**. Set the threshold too close to that and it trips around half charge, for every host in the same cycle — which throws away the per-host thresholds entirely. Measure your own bank under its real load rather than trusting the defaults.
 
 > **Note on `SHUTDOWN_DELAY_MINUTES`:** with a battery source the thresholds already decide *when* to shut down, so the client-side timer becomes an additional grace period stacked on top. Values of `0`–`2` are usually what you want for battery-driven hosts.
 
@@ -613,6 +615,14 @@ WOL_MAX_WAIT_MINUTES="240"   # global safety net, 0 disables the limit
 Deferred hosts show as *Waiting for charge* on the dashboard and are retried every 15 seconds. `WOL_MAX_WAIT_MINUTES` is the escape hatch: after that long, they are woken regardless, so a failed battery monitor cannot keep them asleep indefinitely.
 
 Battery **voltage** is deliberately not used as a wake-up gate. Right after mains returns, the charger pushes voltage to 14.2–14.4 V even at 40% charge — so it would wave through exactly the case this is meant to prevent. State of charge is the honest signal.
+
+#### Waking hosts the battery shut down on its own
+
+The `POWER_FAIL` → `POWER_RESTORED` state machine that normally arms Wake-on-LAN is driven entirely by sentinel pings, so it never sees an outage that only the battery monitor noticed. A host shut down by its own `SHUTDOWN_SOC` — while the sentinels stayed reachable and every other host kept running — therefore needs its own wake-up path, and gets one.
+
+Each battery-sourced host is tracked individually: once its verdict returns to `OL`, it is woken after `WOL_DELAY_MINUTES`, subject to the same `WOL_MIN_SOC` gate and `WOL_MAX_WAIT_MINUTES` safety net as above. The tracker stands down entirely whenever the sentinel-driven cycle has anything to do, so the two never both own the same wake-up or send duplicate mail. State lives in `/var/run/nut/battery_wol.json`.
+
+This matters most in exactly the situation the integration exists for: sentinels reachable (they are on a different circuit, or behind a UPS-backed switch) while the battery genuinely drains. Without it, hosts shut down correctly and then stay off with nothing logged to explain why.
 
 #### Testing without draining the battery
 

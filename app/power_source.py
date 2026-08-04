@@ -42,11 +42,21 @@ STATUS_ON_BATTERY = 'OB'
 STATUS_LOW_BATTERY = 'OB LB'
 
 # Applied when neither the host nor the global config specifies a threshold.
-# Sized for a 12V lead-acid bank: below ~11.5V under load the battery is
-# effectively empty, and 25% SoC leaves room for a graceful shutdown.
+#
+# Sized for a 12V lead-acid bank so that state of charge stays the rule that
+# actually fires and voltage is only the backstop for when SoC is unavailable
+# or wrong. The voltage figures are deliberately low: a real measurement on a
+# ~100Ah bank showed 13.78V at rest collapsing to 12.23V the instant a 56A load
+# moved onto the battery, at 99% SoC. An 11.8V threshold sits only 0.43V under
+# that, so under a heavy load it would trip somewhere around 45-55% SoC - ahead
+# of the SoC rule, and simultaneously for every host, which would defeat the
+# per-host thresholds this module exists to provide.
+#
+# These are estimates from a single load point. Mapping loaded voltage against
+# SoC on your own bank is the only way to place them properly.
 BUILTIN_DEFAULTS = {
-    'CRITICAL_VOLTAGE': 11.5,
-    'SHUTDOWN_VOLTAGE': 11.8,
+    'CRITICAL_VOLTAGE': 11.0,
+    'SHUTDOWN_VOLTAGE': 11.4,
     'SHUTDOWN_SOC': 25.0,
     'MIN_RUNTIME_MINUTES': 0.0,   # 0 = rule disabled
     'WOL_MIN_SOC': 0.0,           # 0 = rule disabled

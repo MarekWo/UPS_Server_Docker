@@ -64,6 +64,10 @@ BATTERY_MAX_DATA_AGE="60"
 # hysteresis and debounce) and these values are then ignored.
 BATTERY_AC_FALLBACK_VOLTAGE="13.50"
 BATTERY_AC_DISCHARGE_CURRENT="-1.0"
+# At/above this charging current mains is considered back, without waiting for
+# voltage to climb - which it does very slowly out of a deep discharge. Set to
+# 0 if an independent DC source (solar/MPPT) can also charge the bank.
+BATTERY_AC_CHARGE_CURRENT="2.0"
 
 # --- Decision mode ---
 # "observe" - the battery rules run, are logged and shown in the Web GUI, but
@@ -81,8 +85,15 @@ BATTERY_DEFAULT_POWER_SOURCE="sentinel"
 # --- Default battery thresholds ---
 # Applied to any host that does not override them. All are optional; the
 # built-in values below are used if a key is absent entirely.
-BATTERY_DEFAULT_CRITICAL_VOLTAGE="11.5"     # V - shut down immediately
-BATTERY_DEFAULT_SHUTDOWN_VOLTAGE="11.8"     # V - shut down
+#
+# The voltage figures are backstops, not the primary rule - keep them low
+# enough that SHUTDOWN_SOC is what actually fires. Battery voltage collapses
+# hard under load: a ~100Ah bank measured 13.78V at rest and 12.23V the instant
+# a 56A load moved onto it, still at 99% SoC. Set too high, the voltage rule
+# trips around half charge and trips for every host at once, which throws away
+# the per-host thresholds. Measure your own bank under its real load.
+BATTERY_DEFAULT_CRITICAL_VOLTAGE="11.0"     # V - shut down immediately
+BATTERY_DEFAULT_SHUTDOWN_VOLTAGE="11.4"     # V - shut down
 BATTERY_DEFAULT_SHUTDOWN_SOC="25"           # % - shut down
 BATTERY_DEFAULT_MIN_RUNTIME_MINUTES="0"     # min - 0 disables this rule
 BATTERY_DEFAULT_WOL_MIN_SOC="0"             # % - 0 disables the WoL gate
@@ -199,7 +210,7 @@ MAC=00:11:32:44:55:66
 SHUTDOWN_DELAY_MINUTES=0
 POWER_SOURCE=both
 SHUTDOWN_SOC=15
-CRITICAL_VOLTAGE=11.5
+CRITICAL_VOLTAGE=11.0
 MIN_RUNTIME_MINUTES=10
 WOL_MIN_SOC=95
 
