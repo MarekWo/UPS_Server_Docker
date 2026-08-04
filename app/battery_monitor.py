@@ -28,6 +28,7 @@ log = logging.getLogger("PowerManager")
 # `ac_power` itself. Mirrors the defaults in victron-bm-webui/app/ac_state.py.
 DEFAULT_AC_FALLBACK_VOLTAGE = 13.50
 DEFAULT_AC_DISCHARGE_CURRENT = -1.0
+DEFAULT_AC_CHARGE_CURRENT = 2.0
 
 
 @dataclass
@@ -111,6 +112,11 @@ class BatteryMonitor:
             _to_float(config.get('BATTERY_AC_DISCHARGE_CURRENT'))
             if config.get('BATTERY_AC_DISCHARGE_CURRENT') not in (None, '')
             else DEFAULT_AC_DISCHARGE_CURRENT
+        )
+        self.ac_charge_current = (
+            _to_float(config.get('BATTERY_AC_CHARGE_CURRENT'))
+            if config.get('BATTERY_AC_CHARGE_CURRENT') not in (None, '')
+            else DEFAULT_AC_CHARGE_CURRENT
         )
 
         # Simulation overrides - lets thresholds be exercised without actually
@@ -289,6 +295,14 @@ class BatteryMonitor:
         """
         if current is not None and current <= self.ac_discharge_current:
             return False
+        # Charging current settles mains presence on its own: out of a deep
+        # discharge the charger holds terminal voltage well below the fallback
+        # threshold for a long time, so voltage alone reports "on battery" long
+        # after mains is back. Set BATTERY_AC_CHARGE_CURRENT=0 to disable when
+        # an independent DC source (solar/MPPT) can also charge the bank.
+        if (self.ac_charge_current and self.ac_charge_current > 0
+                and current is not None and current >= self.ac_charge_current):
+            return True
         if voltage is None:
             return None
         return voltage >= self.ac_fallback_voltage
