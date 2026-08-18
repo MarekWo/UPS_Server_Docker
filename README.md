@@ -603,6 +603,28 @@ Leave it in observe mode for a few days, confirm the battery monitor tracks real
 
 Power outage simulation is unaffected by the decision mode — a simulated outage still exercises the real shutdown path in both modes.
 
+### Real outages during a simulation window
+
+A scheduled simulation holds the site at `OB LB` for its whole window, so a
+genuine outage starting underneath one is not a state transition and cannot be
+detected by watching the state machine. The sentinel hosts are therefore polled
+throughout a simulation, and a real failure is judged on that reading alone:
+
+- the simulation is interrupted immediately and `POWER_SIMULATION_MODE` is
+  cleared, so the shutdown decisions that follow are the real ones;
+- the outage alert is sent even though the state machine was already sitting in
+  `POWER_FAIL`, and exactly once per outage;
+- if mains returns while the window is still open, the simulation resumes and
+  the restoration is still announced - the "power is back" mail is not
+  swallowed by the simulation notification class, which is usually switched off;
+- the Wake-on-LAN countdown started by that restoration is re-checked against
+  the live sentinel reading before it fires, so a grid that drops again during
+  the delay cannot wake a host into a running outage.
+
+Windows that cross midnight (`21:00` to `06:00`, the usual overnight test) are
+supported: the start and stop schedules are paired by `DAY_OF_WEEK`, and the
+hours after midnight count as part of the day the window opened on.
+
 #### Holding back Wake-on-LAN until the battery has recovered
 
 Waking servers onto a battery that is still nearly empty just means shutting them down again minutes later. Set `WOL_MIN_SOC` on a host and it will not be woken until the battery reaches that charge **and** is actually charging (positive current):
