@@ -382,8 +382,17 @@ def apply_client_power_state(nested_data):
             nested_data['battery']['voltage'] = battery['voltage']
         if battery.get('current') is not None:
             nested_data['battery']['current'] = battery['current']
-        if battery.get('remaining_mins') is not None:
-            nested_data['battery']['runtime'] = int(battery['remaining_mins']) * 60
+        # NUT's battery.runtime is "seconds of usable runtime left", so the
+        # figure measured to our own shutdown threshold is the truthful one.
+        # The monitor's own estimate stops at the gauge's discharge floor and
+        # disappears below it, which would tell a client it has no runtime at
+        # all while the server still intends to keep it up for another quarter
+        # of an hour.
+        runtime_mins = battery.get('runtime_to_shutdown_mins')
+        if runtime_mins is None:
+            runtime_mins = battery.get('remaining_mins')
+        if runtime_mins is not None:
+            nested_data['battery']['runtime'] = int(runtime_mins) * 60
         nested_data['battery']['connected'] = battery.get('connected', False)
 
     verdict = (state.get('hosts') or {}).get(client_ip)

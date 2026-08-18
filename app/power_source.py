@@ -62,6 +62,11 @@ BUILTIN_DEFAULTS = {
     'WOL_MIN_SOC': 0.0,           # 0 = rule disabled
 }
 
+# Usable capacity of the bank in amp-hours, which is what turns a state of
+# charge into minutes. 0 means "not measured", and every runtime calculation
+# then falls back to whatever the battery monitor reports on its own.
+BUILTIN_CAPACITY_AH = 0.0
+
 
 @dataclass
 class HostVerdict:
@@ -114,6 +119,16 @@ class PowerSourceEvaluator:
             default_source = SOURCE_SENTINEL
         self.default_source = default_source
 
+        capacity = _to_float(config.get('BATTERY_CAPACITY_AH'))
+        if capacity is None:
+            capacity = BUILTIN_CAPACITY_AH
+        if capacity < 0:
+            log.warning(
+                "Negative BATTERY_CAPACITY_AH '%s' - ignoring it", capacity,
+            )
+            capacity = 0.0
+        self.capacity_ah = capacity
+
     # --- configuration resolution ---
 
     def host_source(self, host: dict) -> str:
@@ -135,6 +150,53 @@ class PowerSourceEvaluator:
         if value is None:
             value = BUILTIN_DEFAULTS[key]
         return value
+
+    # --- runtime estimation ---
+
+    def runtime_to_soc(self, battery, target_soc: float):
+        """Minutes of discharge left before the bank reaches `target_soc`.
+
+        The battery monitor publishes its own time-to-go, but it answers a
+        different question: a BMV counts down to the Discharge floor set in
+        the gauge, and reports nothing at all once it is past it. On a bank
+        whose floor sits at 50% that estimate is worthless exactly when it
+        matters - measured against a 90 minute discharge it read 7 minutes
+        with 25 left, then went blank with 16 still to go.
+
+        What a UPS actually needs to know is how long until *this* server
+        starts shutting hosts down, which is SHUTDOWN_SOC. Given the bank
+        capacity that is straightforward arithmetic on the present draw.
+
+        Returns None whenever the answer would be a guess rather than a
+        measurement: no configured capacity, no reading, or not discharging.
+        """
+        if self.capacity_ah <= 0 or battery is None:
+            return None
+        if battery.soc is None or battery.current is None:
+            return None
+
+        draw = -battery.current
+        if draw <= 0:
+            return None  # charging or idle - there is no runtime to count down
+
+        remaining_ah = (battery.soc - target_soc) / 100.0 * self.capacity_ah
+        if remaining_ah <= 0:
+            return 0
+        return int(remaining_ah / draw * 60)
+
+    def first_shutdown_soc(self, hosts) -> Optional[float]:
+        """The highest SHUTDOWN_SOC among battery-driven hosts.
+
+        That is the threshold the bank reaches first, so it is the one a
+        site-wide runtime figure has to be measured against - the point where
+        something starts going down, not where the last host does.
+        """
+        thresholds = [
+            self.threshold(host, 'SHUTDOWN_SOC')
+            for host in hosts
+            if self.host_source(host) != SOURCE_SENTINEL
+        ]
+        return max(thresholds) if thresholds else None
 
     # --- evaluation ---
 
@@ -246,10 +308,21 @@ class PowerSourceEvaluator:
                 f"threshold {shutdown_voltage:.2f}V", sentinel_offline,
             )
 
-        if (min_runtime > 0 and battery.remaining_mins is not None
-                and battery.remaining_mins <= min_runtime):
+        # Our own estimate first. Comparing MIN_RUNTIME_MINUTES against the
+        # gauge's time-to-go measures it from the wrong finish line - the
+        # gauge's discharge floor rather than this host's SHUTDOWN_SOC - so it
+        # fires early, and stops firing altogether below that floor. The
+        # gauge's figure stays as the fallback for banks whose capacity has
+        # not been measured yet.
+        runtime_mins = self.runtime_to_soc(battery, shutdown_soc)
+        runtime_is_measured = runtime_mins is not None
+        if runtime_mins is None:
+            runtime_mins = battery.remaining_mins
+
+        if (min_runtime > 0 and runtime_mins is not None
+                and runtime_mins <= min_runtime):
             return self._shutdown(
-                f"estimated runtime {battery.remaining_mins} min at or below "
+                f"estimated runtime {runtime_mins} min at or below "
                 f"threshold {min_runtime:.0f} min", sentinel_offline,
             )
 
@@ -259,8 +332,11 @@ class PowerSourceEvaluator:
             margin.append(f"SoC {battery.soc:.1f}% > {shutdown_soc:.1f}%")
         if battery.voltage is not None:
             margin.append(f"{battery.voltage:.2f}V > {shutdown_voltage:.2f}V")
-        if battery.remaining_mins is not None:
-            margin.append(f"~{battery.remaining_mins} min left")
+        if runtime_mins is not None:
+            margin.append(
+                f"~{runtime_mins} min to {shutdown_soc:.0f}%"
+                if runtime_is_measured else f"~{runtime_mins} min left"
+            )
 
         return self._verdict(
             STATUS_ONLINE, STATUS_ON_BATTERY, SOURCE_BATTERY,

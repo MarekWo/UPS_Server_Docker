@@ -75,6 +75,14 @@
             white-space: nowrap;
         }
         
+        /* The ping tables put the coloured dot and the caption in two separate
+           inline elements, so nowrap on the caption alone still let the line
+           break right after the dot - which is how "Online" ended up below its
+           own indicator in the narrow sentinel column. Hold the whole cell. */
+        .ping-status-cell {
+            white-space: nowrap;
+        }
+        
         .btn-primary {
             background: linear-gradient(135deg, var(--secondary-color), #5dade2);
             border: none;

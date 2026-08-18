@@ -625,6 +625,38 @@ Windows that cross midnight (`21:00` to `06:00`, the usual overnight test) are
 supported: the start and stop schedules are paired by `DAY_OF_WEEK`, and the
 hours after midnight count as part of the day the window opened on.
 
+#### How much runtime is actually left
+
+A battery monitor's own runtime estimate answers a subtly different question
+from the one a UPS needs answered. A Victron BMV counts its time-to-go down to
+the **Discharge floor configured in the gauge**, and reports nothing at all
+once the bank is past it. That floor has nothing to do with `SHUTDOWN_SOC`,
+which is where this server actually starts shutting hosts down.
+
+On the reference installation the floor is 50% and `SHUTDOWN_SOC` is 40%. During
+a 90 minute crash test the dashboard therefore read `7 min` while 25 minutes of
+margin remained, and went blank with 16 minutes still to go - at a perfectly
+healthy 12.0V.
+
+Set `BATTERY_CAPACITY_AH` to the usable capacity of the bank and the figure is
+computed here instead, from the state of charge and the present draw, measured
+to the threshold that governs the shutdown:
+
+```bash
+BATTERY_CAPACITY_AH="85"    # 0 = defer to the monitor's own estimate
+```
+
+That figure is what the dashboard shows (labelled `Runtime to 40%`, so it is
+clear which finish line it counts to), what clients are served as NUT's
+`battery.runtime`, and what `MIN_RUNTIME_MINUTES` is compared against. Without
+it, all three fall back to the monitor's estimate and behave as before - which
+also means `MIN_RUNTIME_MINUTES` fires early and stops working below the
+gauge's floor, so measure the capacity before relying on that rule.
+
+The site-wide figure is measured to the **highest** `SHUTDOWN_SOC` among
+battery-sourced hosts, because that is the one the bank reaches first: it tells
+you how long until something starts going down, not until the last host does.
+
 #### When the battery monitor goes quiet
 
 If a poll comes back empty, a battery-sourced host is handed the sentinel

@@ -179,6 +179,20 @@
             </div>
         </div>
 
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <label for="battery_capacity_ah" class="form-label">Bank Capacity (Ah)</label>
+                <input type="number" step="1" min="0" class="form-control" id="battery_capacity_ah" name="battery_capacity_ah" value="{{ pm_config.get('BATTERY_CAPACITY_AH', '0') }}">
+                <div class="form-text">
+                    Usable capacity of the bank. Turns state of charge into minutes, so the
+                    dashboard and the Min Runtime rule can count down to <strong>your</strong>
+                    shutdown threshold. A BMV counts down to the discharge floor set in the
+                    gauge instead, and reports nothing once past it. Leave at 0 to keep using
+                    the gauge's own estimate.
+                </div>
+            </div>
+        </div>
+
         <h5 class="mt-3"><i class="fas fa-gauge-high text-primary me-2"></i>Default Battery Thresholds</h5>
         <p class="text-muted">Applied to any host that does not override them individually.</p>
         <div class="row">

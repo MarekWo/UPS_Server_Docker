@@ -144,6 +144,7 @@ def write_power_manager_config(config, wake_hosts, schedules):
         battery_keys = [
             'BATTERY_ENABLED', 'BATTERY_API_URL', 'BATTERY_API_TIMEOUT',
             'BATTERY_MAX_DATA_AGE', 'BATTERY_FALLBACK_GRACE_CYCLES',
+            'BATTERY_CAPACITY_AH',
             'BATTERY_AC_FALLBACK_VOLTAGE',
             'BATTERY_AC_DISCHARGE_CURRENT', 'BATTERY_AC_CHARGE_CURRENT',
             'BATTERY_DECISION_MODE',
@@ -433,6 +434,7 @@ def save_main_config():
             'battery_api_url', 'http://localhost:8088').strip()
         pm_config['BATTERY_API_TIMEOUT'] = request.form.get('battery_api_timeout', '5')
         pm_config['BATTERY_MAX_DATA_AGE'] = request.form.get('battery_max_data_age', '60')
+        pm_config['BATTERY_CAPACITY_AH'] = request.form.get('battery_capacity_ah', '0')
         pm_config['BATTERY_DECISION_MODE'] = request.form.get('battery_decision_mode', 'observe')
         pm_config['BATTERY_DEFAULT_POWER_SOURCE'] = request.form.get(
             'battery_default_power_source', 'sentinel')

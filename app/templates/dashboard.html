@@ -119,7 +119,7 @@
                             <div class="text-center">
                                 <div class="h3 text-info mb-1"><i class="fas fa-hourglass-half"></i></div>
                                 <div class="h4 mb-0" id="battery-runtime">--</div>
-                                <small class="text-muted">Estimated Runtime</small>
+                                <small class="text-muted" id="battery-runtime-label">Estimated Runtime</small>
                             </div>
                         </div>
                     </div>
@@ -159,7 +159,7 @@
                                 {% for host in sentinel_hosts %}
                                     <tr>
                                         <td><code>{{ host }}</code></td>
-                                        <td>
+                                        <td class="ping-status-cell">
                                             <span id="sentinel-{{ host.replace('.', '-') }}" class="status-indicator {{ 'online' if sentinel_status.get(host) else 'offline' }}"></span>
                                             <span id="sentinel-{{ host.replace('.', '-') }}-text" class="{{ 'status-online' if sentinel_status.get(host) else 'status-offline' }}">
                                                 <i class="fas fa-{{ 'check-circle' if sentinel_status.get(host) else 'times-circle' }} me-1"></i>
@@ -302,7 +302,7 @@
                             <tr>
                                 <td><strong>{{ host.get('NAME', section) }}</strong></td>
                                 <td><code>{{ host.get('IP', '') }}</code></td>
-                                <td>
+                                <td class="ping-status-cell">
                                     <span id="wake-{{ section }}" class="status-indicator {{ 'online' if wake_host_status.get(section) else 'offline' }}"></span>
                                     <span id="wake-{{ section }}-text" class="{{ 'status-online' if wake_host_status.get(section) else 'status-offline' }}">
                                         {# Content is rendered dynamically by JavaScript #}
@@ -329,7 +329,7 @@
                         </div>
                         <div class="mobile-card-row">
                             <span class="mobile-card-label">Status:</span>
-                            <span class="mobile-card-value">
+                            <span class="mobile-card-value ping-status-cell">
                                 <span id="wake-{{ section }}-mobile" class="status-indicator {{ 'online' if wake_host_status.get(section) else 'offline' }}"></span>
                                 <span id="wake-{{ section }}-text-mobile" class="{{ 'status-online' if wake_host_status.get(section) else 'status-offline' }}">
                                     {# Content is rendered dynamically by JavaScript #}
@@ -604,14 +604,38 @@ function updateBatteryUI(battery) {
         }
     }
 
-    // remaining_mins is null while charging - the BMV only estimates on discharge.
-    const runtime = battery.remaining_mins;
+    // Two different questions, and the difference matters on a discharging
+    // bank. runtime_to_shutdown_mins counts down to the SoC at which this
+    // server starts shutting hosts down; the monitor's own remaining_mins
+    // counts down to the discharge floor configured in the gauge, and goes
+    // null below it. Prefer ours, and say which one is on screen. Both are
+    // null while charging - neither estimates anything but a discharge.
+    const measured = battery.runtime_to_shutdown_mins;
+    const runtime = (measured === null || measured === undefined)
+        ? battery.remaining_mins : measured;
+    const isMeasured = !(measured === null || measured === undefined);
+
     document.getElementById('battery-runtime').textContent =
         (runtime === null || runtime === undefined)
             ? '—'
             : (runtime >= 60
                 ? Math.floor(runtime / 60) + 'h ' + (runtime % 60) + 'm'
                 : runtime + ' min');
+
+    const runtimeLabel = document.getElementById('battery-runtime-label');
+    if (isMeasured && battery.runtime_shutdown_soc !== null
+            && battery.runtime_shutdown_soc !== undefined) {
+        runtimeLabel.textContent =
+            'Runtime to ' + battery.runtime_shutdown_soc.toFixed(0) + '%';
+        runtimeLabel.title =
+            'Time until the first host reaches its shutdown state of charge.';
+    } else {
+        runtimeLabel.textContent = 'Estimated Runtime';
+        runtimeLabel.title =
+            'Reported by the battery monitor, which counts down to its own '
+            + 'discharge floor. Set the bank capacity to measure this against '
+            + 'the configured shutdown threshold instead.';
+    }
 
     document.getElementById('battery-temperature').textContent =
         battery.temperature === null || battery.temperature === undefined

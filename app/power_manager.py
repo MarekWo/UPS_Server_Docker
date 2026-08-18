@@ -1285,6 +1285,31 @@ class PowerManager:
         if json.dumps(tracked, sort_keys=True) != original:
             self._write_battery_wol_state(tracked)
 
+    def _runtime_section(self) -> dict:
+        """Site-wide runtime, measured to the first host shutdown.
+
+        The battery monitor's own time-to-go counts down to the gauge's
+        discharge floor, which on this bank is well above the point where
+        anything actually shuts down - so the dashboard would show minutes
+        while an hour of margin remained, then show nothing at all. This
+        publishes the honest figure alongside it, and says which threshold it
+        was measured against so the UI can label it.
+        """
+        clients = [
+            params for params in self.wake_hosts.values()
+            if params.get('IP') and 'SHUTDOWN_DELAY_MINUTES' in params
+        ]
+        target = self.evaluator.first_shutdown_soc(clients)
+        if target is None:
+            return {}
+
+        return {
+            'runtime_shutdown_soc': target,
+            'runtime_to_shutdown_mins': self.evaluator.runtime_to_soc(
+                self.battery_status, target
+            ),
+        }
+
     def _write_power_state(self, power_status, host_verdicts=None):
         """Publish the current power picture for the API and Web GUI.
 
@@ -1299,6 +1324,7 @@ class PowerManager:
             if self.battery_status:
                 battery_section['available'] = True
                 battery_section.update(self.battery_status.to_dict())
+                battery_section.update(self._runtime_section())
             else:
                 battery_section['error'] = self.battery_monitor.last_error
 

@@ -71,6 +71,25 @@ BATTERY_MAX_DATA_AGE="60"
 # default 15s poll. Set to 0 to fall back on the first miss (old behaviour).
 BATTERY_FALLBACK_GRACE_CYCLES="4"
 
+# Usable capacity of the battery bank, in amp-hours. 0 means "not measured".
+#
+# This is what turns a state of charge into minutes, and it is worth measuring,
+# because a battery monitor's own runtime estimate answers a different question.
+# A Victron BMV counts its time-to-go down to the "Discharge floor" configured
+# in the gauge - 50% on the reference bank - and reports nothing at all below
+# it. During a 90 minute crash test on 2026-08-18 the dashboard therefore showed
+# "7 min" while 25 minutes of margin remained, then went blank with 16 minutes
+# still to go, all at a perfectly healthy 12.0V.
+#
+# With a capacity set, the runtime shown on the dashboard, served to clients as
+# NUT's battery.runtime, and compared against MIN_RUNTIME_MINUTES is measured to
+# the SHUTDOWN_SOC that actually governs this server - the point where hosts
+# start going down. Leave it at 0 to keep deferring to the monitor's estimate.
+#
+# Use the usable capacity of the bank as the gauge itself is configured, so the
+# two agree: the reference bank is 85Ah, or 0.85Ah per 1% of state of charge.
+BATTERY_CAPACITY_AH="0"
+
 # Fallback mains detection, used ONLY when the victron-bm-webui instance is too
 # old to report `ac_power` itself. Newer versions do this properly (with
 # hysteresis and debounce) and these values are then ignored.
