@@ -206,7 +206,7 @@
                                 <tr>
                                     <td><strong>{{ client.name }}</strong></td>
                                     <td><code>{{ client.ip }}</code></td>
-                                    <td id="client-status-{{ client.ip.replace('.', '-') }}">
+                                    <td class="client-status-cell" id="client-status-{{ client.ip.replace('.', '-') }}">
                                         {# Content is rendered dynamically by JavaScript #}
                                     </td>
                                     {% if battery is defined and battery.get('enabled') %}

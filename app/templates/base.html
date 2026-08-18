@@ -59,6 +59,22 @@
             color: var(--danger-color);
         }
         
+        /* Every one of these labels is an icon followed by a short caption.
+           In a narrow column the space between them is a break opportunity,
+           which left the icon stranded on its own line. */
+        .status-online,
+        .status-offline {
+            white-space: nowrap;
+        }
+        
+        /* The same column also carries the transient states as badges
+           ("Shutting Down...", "Waiting for charge"), which wrapped the same
+           way. The countdown badge keeps its progress bar on the line below,
+           so only the badge itself is held together. */
+        .client-status-cell .badge {
+            white-space: nowrap;
+        }
+        
         .btn-primary {
             background: linear-gradient(135deg, var(--secondary-color), #5dade2);
             border: none;
