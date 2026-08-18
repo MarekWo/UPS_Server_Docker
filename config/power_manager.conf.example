@@ -59,6 +59,18 @@ BATTERY_API_TIMEOUT="5"
 # fallback to sentinel logic. The BLE device is normally read every 10s.
 BATTERY_MAX_DATA_AGE="60"
 
+# How many consecutive empty battery polls to ride out before a battery-sourced
+# host is handed back to the sentinel verdict. Inside this window the host keeps
+# whatever it was last told; after it, the usual fallback applies.
+#
+# The fallback is fail-safe by design - during an outage the sentinel verdict is
+# "OB LB" - so without a grace window a single missed poll shuts a host down. On
+# 2026-08-18 the UPS server itself was suspended for 56s; the battery API needed
+# a few more seconds than the manager to come back, and in that gap Synology
+# Chomik was told to shut down at 69.9% SoC. Four cycles is about a minute at the
+# default 15s poll. Set to 0 to fall back on the first miss (old behaviour).
+BATTERY_FALLBACK_GRACE_CYCLES="4"
+
 # Fallback mains detection, used ONLY when the victron-bm-webui instance is too
 # old to report `ac_power` itself. Newer versions do this properly (with
 # hysteresis and debounce) and these values are then ignored.

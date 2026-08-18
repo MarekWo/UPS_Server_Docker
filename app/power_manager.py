@@ -33,6 +33,7 @@ CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
 CLIENT_NOTIFICATION_STATE_FILE = "/var/run/nut/client_notification.state"
 POWER_STATE_FILE = "/var/run/nut/power_state.json"
 BATTERY_WOL_STATE_FILE = "/var/run/nut/battery_wol.json"
+BATTERY_GAP_STATE_FILE = "/var/run/nut/battery_gap.json"
 UPS_STATE_FILE_DEFAULT = "/var/run/nut/virtual.device"
 LOCK_FILE = "/var/run/nut/power_manager.lock"
 
@@ -312,6 +313,9 @@ class PowerManager:
         self.battery_monitor = BatteryMonitor(self.config)
         self.evaluator = PowerSourceEvaluator(self.config)
         self.battery_status = None
+        # How many consecutive polls have come back empty. A single miss is
+        # usually the monitor restarting, not the battery vanishing.
+        self.battery_gap_cycles = 0
         self.sentinel_online_count = 0
         self.sentinel_total_count = 0
         self.power_state = None
@@ -970,19 +974,97 @@ class PowerManager:
         if not self.battery_monitor.enabled:
             return
 
+        self.battery_gap_cycles = self._read_battery_gap()
+
         try:
             self.battery_status = self.battery_monitor.get_status()
         except Exception as e:
             log.error(f"Battery monitor failed unexpectedly: {e}", exc_info=True)
-            return
+            self.battery_status = None
+
+        grace = self._fallback_grace_cycles()
 
         if self.battery_status:
             log.info(f"Battery: {self.battery_status.describe()}")
+            if self.battery_gap_cycles:
+                log.info(
+                    "Battery data is back after %d missed poll(s).",
+                    self.battery_gap_cycles,
+                )
+            self.battery_gap_cycles = 0
         else:
+            self.battery_gap_cycles += 1
+            reason = self.battery_monitor.last_error or "unknown reason"
+            if self.battery_gap_cycles <= grace:
+                log.warning(
+                    "Battery data unavailable (%s) - missed poll %d of %d, "
+                    "holding the previous per-host verdicts",
+                    reason, self.battery_gap_cycles, grace,
+                )
+            else:
+                log.warning(
+                    "Battery data unavailable (%s) for %d consecutive polls "
+                    "(limit %d) - falling back to sentinel logic",
+                    reason, self.battery_gap_cycles, grace,
+                )
+
+        self._write_battery_gap(self.battery_gap_cycles)
+
+    def _fallback_grace_cycles(self):
+        """How many empty battery polls to ride out before falling back.
+
+        The fallback is deliberately fail-safe - it sends hosts to the sentinel
+        verdict, which during an outage means OB LB - so a momentary gap in the
+        data is enough to shut a host down. On 2026-08-18 the UPS server itself
+        was suspended for 56 seconds; the battery API came back a few seconds
+        after the manager did, and in that window Synology Chomik was served
+        OB LB at 69.9% SoC and powered off. Waiting a few cycles costs nothing:
+        if mains really is gone, the sentinels have not moved and the fallback
+        still arrives, just a minute later.
+        """
+        raw = self.config.get('BATTERY_FALLBACK_GRACE_CYCLES', 4)
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
             log.warning(
-                "Battery data unavailable (%s) - falling back to sentinel logic",
-                self.battery_monitor.last_error or "unknown reason",
+                "Invalid BATTERY_FALLBACK_GRACE_CYCLES '%s' - using 4", raw
             )
+            return 4
+
+    def _read_battery_gap(self):
+        """Load the consecutive-missed-poll counter, or 0 if unusable."""
+        try:
+            with open(BATTERY_GAP_STATE_FILE, 'r') as f:
+                data = json.load(f)
+            return max(0, int(data.get('consecutive_misses', 0)))
+        except FileNotFoundError:
+            return 0
+        except (IOError, ValueError, AttributeError, json.JSONDecodeError) as e:
+            log.warning(f"Cannot read battery gap state, starting fresh: {e}")
+            return 0
+
+    def _write_battery_gap(self, misses):
+        """Persist the counter atomically; each iteration is a fresh process."""
+        try:
+            temp_file = BATTERY_GAP_STATE_FILE + ".tmp"
+            with open(temp_file, 'w') as f:
+                json.dump({'consecutive_misses': misses}, f)
+            os.replace(temp_file, BATTERY_GAP_STATE_FILE)
+        except (IOError, OSError, TypeError) as e:
+            log.error(f"Cannot write battery gap state: {e}")
+
+    def _read_published_verdicts(self):
+        """Last per-host verdicts this manager published, keyed by IP."""
+        try:
+            with open(POWER_STATE_FILE, 'r') as f:
+                data = json.load(f)
+            hosts = data.get('hosts')
+            return hosts if isinstance(hosts, dict) else {}
+        except FileNotFoundError:
+            return {}
+        except (IOError, ValueError, AttributeError, json.JSONDecodeError) as e:
+            log.warning(f"Cannot read the last published verdicts: {e}")
+            return {}
 
     def _evaluate_hosts(self, power_status):
         """Run the per-host power evaluation and log anything noteworthy.
@@ -992,6 +1074,17 @@ class PowerManager:
         """
         verdicts = {}
         simulation = self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true'
+
+        # Inside the grace window a battery-sourced host keeps whatever it was
+        # last told, rather than being handed the sentinel verdict. Holding the
+        # published verdict rather than forcing OL is what makes this safe in
+        # both directions: a host already on its way down stays on its way down.
+        holding = (
+            self.battery_monitor.enabled
+            and self.battery_status is None
+            and 0 < self.battery_gap_cycles <= self._fallback_grace_cycles()
+        )
+        previous = self._read_published_verdicts() if holding else {}
 
         # The real sentinel verdict, without the simulation override that
         # _determine_power_status() folds in - the evaluator needs both facts
@@ -1005,13 +1098,38 @@ class PowerManager:
             if not ip or 'SHUTDOWN_DELAY_MINUTES' not in params:
                 continue  # WoL-only host, not a UPS client
 
+            name = params.get('NAME', ip)
+
+            if (holding and ip in previous
+                    and self.evaluator.host_source(params) != SOURCE_SENTINEL):
+                entry = dict(previous[ip])
+                entry['name'] = params.get('NAME', section)
+                entry['section'] = section
+                entry['reason'] = (
+                    "battery data missing for %d of %d allowed polls - holding "
+                    "the previous verdict" % (
+                        self.battery_gap_cycles, self._fallback_grace_cycles()
+                    )
+                )
+                # The stored flag was raised against battery data we no longer
+                # have; re-reporting it would just be noise.
+                entry['disagreement'] = False
+                verdicts[ip] = entry
+                log.warning(
+                    "HOLDING %s (%s): serving %s - battery data missing "
+                    "for %d of %d allowed polls",
+                    name, ip, entry.get('status'),
+                    self.battery_gap_cycles, self._fallback_grace_cycles(),
+                )
+                continue
+
             try:
                 verdict = self.evaluator.evaluate_host(
                     params, self.battery_status, sentinel_offline, simulation
                 )
             except Exception as e:
                 log.error(
-                    f"Failed to evaluate host {params.get('NAME', ip)}: {e}",
+                    f"Failed to evaluate host {name}: {e}",
                     exc_info=True,
                 )
                 continue
@@ -1021,7 +1139,6 @@ class PowerManager:
             entry['section'] = section
             verdicts[ip] = entry
 
-            name = params.get('NAME', ip)
             log.info(
                 "VERDICT %s (%s): serving %s [detail %s, source %s] - %s",
                 name, ip, verdict.status, verdict.detail, verdict.source, verdict.reason,

@@ -625,6 +625,31 @@ Windows that cross midnight (`21:00` to `06:00`, the usual overnight test) are
 supported: the start and stop schedules are paired by `DAY_OF_WEEK`, and the
 hours after midnight count as part of the day the window opened on.
 
+#### When the battery monitor goes quiet
+
+If a poll comes back empty, a battery-sourced host is handed the sentinel
+verdict instead. That is deliberately fail-safe - if the battery monitor dies
+during a genuine outage, the hosts must still come down - but during an outage
+the sentinel verdict is `OB LB`, so a single missed poll is enough to shut a
+host down on the spot.
+
+`BATTERY_FALLBACK_GRACE_CYCLES` (default `4`, roughly a minute at the 15s poll)
+rides out short gaps. Inside the window each battery-sourced host keeps the
+verdict it was last given and the log says so:
+
+```
+HOLDING Synology Chomik (192.168.1.16): serving OL - battery data missing for 2 of 4 allowed polls
+```
+
+Holding the previous verdict rather than forcing `OL` is what makes this safe in
+both directions: a host already counting down to shutdown keeps counting down.
+Once the window is exhausted the ordinary fallback applies. Set the value to `0`
+to fall back on the first miss.
+
+This matters most when the gap is caused by the UPS server itself rather than by
+the battery: a container restart, or the host being suspended, takes the battery
+API away for a few seconds while the sentinels still read as offline.
+
 #### Holding back Wake-on-LAN until the battery has recovered
 
 Waking servers onto a battery that is still nearly empty just means shutting them down again minutes later. Set `WOL_MIN_SOC` on a host and it will not be woken until the battery reaches that charge **and** is actually charging (positive current):
