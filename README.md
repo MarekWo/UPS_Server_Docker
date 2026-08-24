@@ -625,6 +625,29 @@ Windows that cross midnight (`21:00` to `06:00`, the usual overnight test) are
 supported: the start and stop schedules are paired by `DAY_OF_WEEK`, and the
 hours after midnight count as part of the day the window opened on.
 
+#### The one thing `both` will not wait for
+
+`POWER_SOURCE=both` shuts a host down only when the sentinels and the battery
+agree that mains is gone. That is the point of the mode, but it has a sharp
+edge: if a single sentinel survives a real outage - one quietly moved onto
+protected power, or simply still answering pings while hung - then every `both`
+host stays online and **its state of charge and voltage thresholds are never
+consulted at all**. Left alone, those hosts run until the bank is flat.
+
+Critical voltage is the exception. It is the last honest warning before the
+inverter drops out, so it overrides the disagreement and shuts the host down
+anyway:
+
+```
+VERDICT PBS1 (192.168.1.34): serving OB LB - battery voltage 10.90V at or below
+critical 11.00V - shutting down despite a sentinel host still being reachable
+```
+
+Nothing else overrides it, or the mode would not mean anything. Note how late
+this fires: on a 12V lead-acid bank under load, `CRITICAL_VOLTAGE=11.0` is
+somewhere below 15% state of charge. It is a net against a flat bank, not a
+substitute for sentinels that actually track the grid.
+
 #### How much runtime is actually left
 
 A battery monitor's own runtime estimate answers a subtly different question
@@ -653,9 +676,12 @@ it, all three fall back to the monitor's estimate and behave as before - which
 also means `MIN_RUNTIME_MINUTES` fires early and stops working below the
 gauge's floor, so measure the capacity before relying on that rule.
 
-The site-wide figure is measured to the **highest** `SHUTDOWN_SOC` among
-battery-sourced hosts, because that is the one the bank reaches first: it tells
-you how long until something starts going down, not until the last host does.
+The site-wide figure is measured to the **lowest** `SHUTDOWN_SOC` among
+battery-sourced hosts - the last host standing. That is the only finish line
+that stays useful for a whole outage: with the thresholds spread out to stagger
+the shutdowns, measuring to the first one instead makes the tile read zero
+within minutes and sit there for the rest of the outage. When each individual
+host goes down is per-host information, and the client table already shows it.
 
 #### When the battery monitor goes quiet
 

@@ -184,19 +184,26 @@ class PowerSourceEvaluator:
             return 0
         return int(remaining_ah / draw * 60)
 
-    def first_shutdown_soc(self, hosts) -> Optional[float]:
-        """The highest SHUTDOWN_SOC among battery-driven hosts.
+    def last_shutdown_soc(self, hosts) -> Optional[float]:
+        """The lowest SHUTDOWN_SOC among battery-driven hosts.
 
-        That is the threshold the bank reaches first, so it is the one a
-        site-wide runtime figure has to be measured against - the point where
-        something starts going down, not where the last host does.
+        A single site-wide runtime figure has to pick one finish line, and the
+        last host standing is the only choice that stays useful for the whole
+        outage. Measuring to the *first* shutdown instead looks reasonable
+        until the thresholds are spread out to stagger the hosts: with an
+        expendable machine parked at 95% the tile reads zero within minutes and
+        then sits there for the next hour and a half, which tells the reader
+        nothing and looks like a fault.
+
+        When each host goes down individually is per-host information, and the
+        client table already shows it.
         """
         thresholds = [
             self.threshold(host, 'SHUTDOWN_SOC')
             for host in hosts
             if self.host_source(host) != SOURCE_SENTINEL
         ]
-        return max(thresholds) if thresholds else None
+        return min(thresholds) if thresholds else None
 
     # --- evaluation ---
 
@@ -254,6 +261,24 @@ class PowerSourceEvaluator:
         if source == SOURCE_BOTH and on_battery and not sentinel_offline:
             # The battery says mains is gone but the sentinels are still up.
             # Requiring both to agree is the whole point of this mode.
+            #
+            # With one exception, because waiting for agreement is a decision
+            # to keep drawing from the bank. A sentinel that survives a real
+            # outage - one quietly moved onto protected power, or simply hung
+            # answering pings - would otherwise hold every "both" host online
+            # until the bank is flat, with neither its state of charge nor its
+            # voltage thresholds ever consulted. Critical voltage is the last
+            # honest warning before the inverter drops out, so it overrides
+            # the disagreement; nothing else does, or the mode would not mean
+            # anything.
+            critical_voltage = self.threshold(host, 'CRITICAL_VOLTAGE')
+            if battery.voltage is not None and battery.voltage <= critical_voltage:
+                return self._shutdown(
+                    f"battery voltage {battery.voltage:.2f}V at or below "
+                    f"critical {critical_voltage:.2f}V - shutting down despite "
+                    f"a sentinel host still being reachable", sentinel_offline,
+                )
+
             return self._verdict(
                 STATUS_ONLINE, STATUS_ONLINE, SOURCE_BOTH,
                 "battery reports mains lost but a sentinel host is still "

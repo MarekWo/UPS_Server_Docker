@@ -1286,7 +1286,7 @@ class PowerManager:
             self._write_battery_wol_state(tracked)
 
     def _runtime_section(self) -> dict:
-        """Site-wide runtime, measured to the first host shutdown.
+        """Site-wide runtime, measured to the last host shutdown.
 
         The battery monitor's own time-to-go counts down to the gauge's
         discharge floor, which on this bank is well above the point where
@@ -1299,7 +1299,7 @@ class PowerManager:
             params for params in self.wake_hosts.values()
             if params.get('IP') and 'SHUTDOWN_DELAY_MINUTES' in params
         ]
-        target = self.evaluator.first_shutdown_soc(clients)
+        target = self.evaluator.last_shutdown_soc(clients)
         if target is None:
             return {}
 
