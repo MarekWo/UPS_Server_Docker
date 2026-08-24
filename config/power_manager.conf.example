@@ -90,6 +90,23 @@ BATTERY_FALLBACK_GRACE_CYCLES="4"
 # two agree: the reference bank is 85Ah, or 0.85Ah per 1% of state of charge.
 BATTERY_CAPACITY_AH="0"
 
+# How many consecutive checks the battery must report "on battery" while the
+# sentinel hosts are still reachable before that counts as a real outage of the
+# UPS supply itself. At the default 15s cadence, 8 is two minutes.
+#
+# The sentinels answer "is there grid power in the building", which is not the
+# same question as "is the UPS being fed". A breaker or RCD tripping on the
+# UPS circuit separates the two: the grid is fine, every sentinel answers, and
+# the ordinary outage alert never fires while the bank drains. This raises a
+# distinct alert for that case.
+#
+# It is debounced because the same disagreement appears harmlessly at the end
+# of an ordinary outage - the sentinels boot the moment the grid returns, while
+# the battery monitor still needs a few seconds of charge current to call it.
+# Measured at two cycles on the reference installation. Set to 1 to alert on
+# the first reading, at the cost of a false alarm on every restoration.
+BATTERY_ONLY_OUTAGE_CYCLES="8"
+
 # Fallback mains detection, used ONLY when the victron-bm-webui instance is too
 # old to report `ac_power` itself. Newer versions do this properly (with
 # hysteresis and debounce) and these values are then ignored.

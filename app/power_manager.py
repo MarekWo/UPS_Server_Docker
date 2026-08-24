@@ -34,6 +34,7 @@ CLIENT_NOTIFICATION_STATE_FILE = "/var/run/nut/client_notification.state"
 POWER_STATE_FILE = "/var/run/nut/power_state.json"
 BATTERY_WOL_STATE_FILE = "/var/run/nut/battery_wol.json"
 BATTERY_GAP_STATE_FILE = "/var/run/nut/battery_gap.json"
+BATTERY_OUTAGE_STATE_FILE = "/var/run/nut/battery_outage.json"
 UPS_STATE_FILE_DEFAULT = "/var/run/nut/virtual.device"
 LOCK_FILE = "/var/run/nut/power_manager.lock"
 
@@ -1053,6 +1054,108 @@ class PowerManager:
         except (IOError, OSError, TypeError) as e:
             log.error(f"Cannot write battery gap state: {e}")
 
+    def _battery_only_outage_cycles(self):
+        """How long the disagreement must persist before it counts as real."""
+        try:
+            value = int(self.config.get('BATTERY_ONLY_OUTAGE_CYCLES', 8))
+        except (TypeError, ValueError):
+            log.warning(
+                "Invalid BATTERY_ONLY_OUTAGE_CYCLES '%s' - using 8",
+                self.config.get('BATTERY_ONLY_OUTAGE_CYCLES'),
+            )
+            return 8
+        return max(1, value)
+
+    def _read_battery_outage(self):
+        """Load the battery-only outage counter and latch."""
+        try:
+            with open(BATTERY_OUTAGE_STATE_FILE, 'r') as f:
+                data = json.load(f)
+            return (max(0, int(data.get('consecutive', 0))),
+                    bool(data.get('notified', False)))
+        except FileNotFoundError:
+            return 0, False
+        except (IOError, ValueError, AttributeError, json.JSONDecodeError) as e:
+            log.warning(f"Cannot read battery outage state, starting fresh: {e}")
+            return 0, False
+
+    def _write_battery_outage(self, consecutive, notified):
+        """Persist it atomically; each iteration is a fresh process."""
+        try:
+            temp_file = BATTERY_OUTAGE_STATE_FILE + ".tmp"
+            with open(temp_file, 'w') as f:
+                json.dump({'consecutive': consecutive, 'notified': notified}, f)
+            os.replace(temp_file, BATTERY_OUTAGE_STATE_FILE)
+        except (IOError, OSError, TypeError) as e:
+            log.error(f"Cannot write battery outage state: {e}")
+
+    def _check_battery_only_outage(self):
+        """Alert on an outage the sentinel hosts are structurally unable to see.
+
+        The sentinels answer "is there grid power in the building". That is a
+        proxy for the question that actually matters - "is the UPS being fed" -
+        and the two come apart whenever the fault is confined to the UPS's own
+        circuit. A tripped breaker or RCD is enough: the grid is fine, every
+        sentinel answers, power_status never leaves ONLINE, and the ordinary
+        outage alert never fires. Meanwhile the bank drains and the hosts shut
+        down one after another on their state of charge thresholds, unannounced.
+
+        The battery monitor is the only source measuring the right thing, so
+        this alert hangs off it alone, with its own latch, independent of the
+        sentinel-driven state machine - the condition can begin and end without
+        power_status ever changing.
+
+        It is debounced rather than immediate, because the same disagreement
+        appears harmlessly at the *end* of an ordinary outage: the sentinels
+        boot the moment the grid returns while the battery monitor still needs
+        a few seconds of charge current to call it. On 2026-08-24 that window
+        was two cycles wide. Anything short-lived is therefore ignored.
+        """
+        if not self.battery_monitor.enabled:
+            return
+
+        consecutive, notified = self._read_battery_outage()
+        on_battery = (self.battery_status is not None
+                      and self.battery_status.ac_power is False)
+        # Only the disagreement interests us here. Once the sentinels agree,
+        # the ordinary outage alert owns the event.
+        unseen = on_battery and not self.real_power_offline
+
+        consecutive = consecutive + 1 if unseen else 0
+        threshold = self._battery_only_outage_cycles()
+
+        if unseen and consecutive >= threshold and not notified:
+            log.warning(
+                "BATTERY-ONLY OUTAGE: mains lost according to the battery for %d "
+                "consecutive checks while %d of %d sentinel hosts are still "
+                "reachable - the UPS feed itself looks dead.",
+                consecutive, self.sentinel_online_count, self.sentinel_total_count,
+            )
+            self.notifier.send(
+                "POWER_FAIL", "[UPS] ALERT: UPS Lost Mains - Sentinels Still Up",
+                "The battery monitor reports the UPS is running on battery, but "
+                f"{self.sentinel_online_count} of {self.sentinel_total_count} "
+                "sentinel hosts are still reachable - so grid power in the "
+                "building looks fine.\n\n"
+                "That points at the supply to the UPS rather than at the grid; a "
+                "tripped breaker or RCD on its circuit is the usual cause. "
+                "Nothing will restore it on its own, and the hosts will start "
+                "shutting down as the bank drains."
+                + self._battery_context() + self._shutdown_plan()
+            )
+            notified = True
+
+        elif notified and not on_battery:
+            log.info("BATTERY-ONLY OUTAGE cleared: the battery is on mains again.")
+            self.notifier.send(
+                "POWER_RESTORED", "[UPS] INFO: UPS Mains Restored",
+                "The UPS is being fed from mains again."
+                + self._battery_context()
+            )
+            notified = False
+
+        self._write_battery_outage(consecutive, notified)
+
     def _read_published_verdicts(self):
         """Last per-host verdicts this manager published, keyed by IP."""
         try:
@@ -1468,6 +1571,10 @@ class PowerManager:
                 self._handle_power_offline()
             else:
                 self._handle_power_online()
+
+            # Independent of the handlers above: this condition can begin and
+            # end without power_status ever leaving ONLINE.
+            self._check_battery_only_outage()
 
             self._check_client_statuses()
             

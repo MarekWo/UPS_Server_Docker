@@ -144,7 +144,7 @@ def write_power_manager_config(config, wake_hosts, schedules):
         battery_keys = [
             'BATTERY_ENABLED', 'BATTERY_API_URL', 'BATTERY_API_TIMEOUT',
             'BATTERY_MAX_DATA_AGE', 'BATTERY_FALLBACK_GRACE_CYCLES',
-            'BATTERY_CAPACITY_AH',
+            'BATTERY_CAPACITY_AH', 'BATTERY_ONLY_OUTAGE_CYCLES',
             'BATTERY_AC_FALLBACK_VOLTAGE',
             'BATTERY_AC_DISCHARGE_CURRENT', 'BATTERY_AC_CHARGE_CURRENT',
             'BATTERY_DECISION_MODE',

@@ -625,6 +625,34 @@ Windows that cross midnight (`21:00` to `06:00`, the usual overnight test) are
 supported: the start and stop schedules are paired by `DAY_OF_WEEK`, and the
 hours after midnight count as part of the day the window opened on.
 
+#### The outage the sentinel hosts cannot see
+
+Sentinel hosts answer "is there grid power in the building". That is a proxy
+for the question that actually matters - "is the UPS being fed" - and the two
+come apart whenever the fault is confined to the UPS's own circuit. A tripped
+breaker or RCD is enough: the grid is fine, every sentinel answers, the site
+status never leaves `OL`, and the ordinary outage alert never fires. Meanwhile
+the bank drains and the hosts shut down one by one on their state of charge
+thresholds, unannounced.
+
+The battery monitor is the only source measuring the right thing, so a separate
+alert hangs off it alone:
+
+```
+BATTERY-ONLY OUTAGE: mains lost according to the battery for 8 consecutive
+checks while 3 of 3 sentinel hosts are still reachable - the UPS feed itself
+looks dead.
+```
+
+It is debounced by `BATTERY_ONLY_OUTAGE_CYCLES` (default `8`, two minutes at
+the 15s cadence) because the same disagreement appears harmlessly at the end of
+every ordinary outage: the sentinels boot the moment the grid returns, while
+the battery monitor still needs a few seconds of charge current to call it.
+That window was two cycles wide on the reference installation.
+
+The alert is announced once per event and cleared with an "UPS Mains Restored"
+notice when the battery is on mains again.
+
 #### The one thing `both` will not wait for
 
 `POWER_SOURCE=both` shuts a host down only when the sentinels and the battery
