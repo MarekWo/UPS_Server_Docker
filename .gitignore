@@ -28,3 +28,10 @@ mods/*
 .vscode/
 # .dockerignore
 media/UPS_Server_Podcast.m4a
+
+# Internal project documents (not for GitHub)
+Documentation/PRD_v2.md
+
+# Draft replies / community posts (not for GitHub)
+docs/reddit-*.md
+.claude/
