@@ -811,8 +811,14 @@ class PowerManager:
                     deferred_hosts.append(params.get('NAME', ip))
                     continue
 
+            # A host still booting does not answer the ping yet, so every 15s
+            # pass sends it another packet. That is harmless, but announcing
+            # each one sent four identical emails for PBS1 on 2026-09-15.
             if self._wake_host(params) == 'sent':
-                woken_hosts.append(f"- {params.get('NAME')} ({ip})")
+                wol_flag = f"WOL_NOTIFIED_{ip.replace('.', '_')}"
+                if not self.client_notification_states.get(wol_flag):
+                    woken_hosts.append(f"- {params.get('NAME')} ({ip})")
+                    self.client_notification_states[wol_flag] = True
 
         if woken_hosts:
             body = "Sent WoL signals to:\n\n" + "\n".join(woken_hosts)
@@ -1512,7 +1518,11 @@ class PowerManager:
                             self.notifier.send("CLIENT_STALE", "[UPS] WARNING: Client Stale", 
                                              f"Client '{name}' ({ip}) has not reported for {stale_minutes}+ minutes.")
                             self.client_notification_states[stale_flag] = True
-                    elif stale_flag in self.client_notification_states:
+                    # wol_* statuses are written by this server, not reported by
+                    # the client, so their fresh timestamp says nothing about
+                    # the host being back.
+                    elif (stale_flag in self.client_notification_states
+                          and not str(status_data.get('status', '')).startswith('wol_')):
                         # Status is fresh again, clear the stale flag
                         log.info(f"Client '{name}' ({ip}) has recovered from stale status.")
                         del self.client_notification_states[stale_flag]
