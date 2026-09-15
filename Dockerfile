@@ -66,6 +66,8 @@ RUN rm -rf .git
 
 # --- Logrotate Setup ---
 COPY logrotate/power-manager-logrotate /etc/logrotate.d/
+# Overrides Debian's rsyslog rotation, whose reopen signal needs systemd
+COPY logrotate/rsyslog /etc/logrotate.d/rsyslog
 
 # --- Rsyslog Setup ---
 # Note: The actual rsyslog config is mounted via docker-compose.yml

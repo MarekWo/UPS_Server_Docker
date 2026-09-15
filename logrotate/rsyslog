@@ -1,0 +1,29 @@
+# Logrotate configuration for rsyslog, replacing the one Debian ships.
+# This file should be placed in /etc/logrotate.d/rsyslog
+#
+# Debian's postrotate runs /usr/lib/rsyslog/rsyslog-rotate, which only signals
+# rsyslog through systemd. There is no systemd in this container, so rsyslog
+# was never told to reopen its files: it kept writing to syslog.1, and the new,
+# empty syslog was never rotated again because of notifempty. By 2026-09-15
+# syslog.1 and user.log.1 had each grown to 270 MB.
+
+/var/log/syslog
+/var/log/mail.log
+/var/log/kern.log
+/var/log/auth.log
+/var/log/user.log
+/var/log/cron.log
+{
+    # Every power check is logged here as well as in power_manager.log.
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    sharedscripts
+    postrotate
+        # Signal rsyslogd directly to reopen its log files.
+        [ -s /run/rsyslogd.pid ] && kill -HUP "$(cat /run/rsyslogd.pid)" || true
+    endscript
+}
