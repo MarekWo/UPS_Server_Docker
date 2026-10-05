@@ -126,6 +126,7 @@ Without this configuration, features relying on external network resolution (e.g
       * Then, edit `config/power_manager.conf` with your specific values:
           * `SENTINEL_HOSTS`: A space-separated list of IPs for your sentinel devices.
           * `WOL_DELAY_MINUTES`: The time in minutes to wait after power is restored before sending WoL packets.
+          * `WOL_CONFIRM_TIMEOUT_MINUTES`: How long a woken host has to answer a ping before it is reported as not waking up (default `10`, `0` disables). See [Alerting when a woken host stays down](#alerting-when-a-woken-host-stays-down).
           * `UPS_STATE_FILE`: The path to the state file used by the `dummy-ups` driver. **This must match the `port` setting in NUT configuration**.
           * `API_TOKEN`: **(Required)** The secret token used to authenticate client requests. This value must match the token used by your `UPS_monitor` clients.
           * `DEFAULT_BROADCAST_IP`: The default broadcast address for Wake-on-LAN packets.
@@ -145,6 +146,7 @@ Without this configuration, features relying on external network resolution (e.g
             - `NOTIFY_CLIENT_STALE`
             - `NOTIFY_APP_ERROR`
             - `NOTIFY_SIMULATION_MODE`
+            - `NOTIFY_WOL_FAILURE` (on unless set to `"false"`)
           * `[WAKE_HOST_X]`: Sections defining each server to wake up. Each section requires:
             - `NAME`: Descriptive name for the host
             - `IP`: IP address of the host
@@ -758,6 +760,19 @@ The `POWER_FAIL` → `POWER_RESTORED` state machine that normally arms Wake-on-L
 Each battery-sourced host is tracked individually: once its verdict returns to `OL`, it is woken after `WOL_DELAY_MINUTES`, subject to the same `WOL_MIN_SOC` gate and `WOL_MAX_WAIT_MINUTES` safety net as above. The tracker stands down entirely whenever the sentinel-driven cycle has anything to do, so the two never both own the same wake-up or send duplicate mail. State lives in `/var/run/nut/battery_wol.json`.
 
 This matters most in exactly the situation the integration exists for: sentinels reachable (they are on a different circuit, or behind a UPS-backed switch) while the battery genuinely drains. Without it, hosts shut down correctly and then stay off with nothing logged to explain why.
+
+#### Alerting when a woken host stays down
+
+A Wake-on-LAN packet is fire-and-forget: `wakeonlan` exits successfully whether or not anything on the wire listens for that MAC, so *"WoL packet sent successfully"* only proves the packet left the server. A wrong MAC address, Wake-on-LAN disabled on the network card, or a BIOS that cuts standby power to it all look exactly like success - and the host simply stays off.
+
+Every host woken automatically is therefore watched. If it has not answered a ping `WOL_CONFIRM_TIMEOUT_MINUTES` after the first packet, it is sent one more, its dashboard status changes to *Did not wake up*, and a `NOTIFY_WOL_FAILURE` alert goes out listing the usual causes and the MAC and broadcast address actually used. If the host turns up later, a closing message says so.
+
+```bash
+WOL_CONFIRM_TIMEOUT_MINUTES="10"   # 0 disables the check
+NOTIFY_WOL_FAILURE="true"          # on unless explicitly "false"
+```
+
+The check waits while mains is out (by the sentinels or the battery monitor), since a silent host is then the shutdown logic working, and a new outage clears the watch altogether. A host still silent 24 hours after its alert is dropped from the watch. Packets sent with the dashboard's manual *Wake* button are not watched. State lives in `/var/run/nut/wol_watch.json`.
 
 #### Testing without draining the battery
 

@@ -55,6 +55,13 @@
 			 <div class="form-text">Enables detailed DEBUG-level logging for troubleshooting (increases log verbosity).</div>
 		  </div>
 	   </div>
+	   <div class="row">
+		  <div class="col-md-6 mb-3">
+			 <label for="wol_confirm_timeout_minutes" class="form-label">Wake-on-LAN Confirmation Timeout (minutes)</label>
+			 <input type="number" class="form-control" id="wol_confirm_timeout_minutes" name="wol_confirm_timeout_minutes" min="0" max="120" value="{{ pm_config.get('WOL_CONFIRM_TIMEOUT_MINUTES', '10') }}">
+			 <div class="form-text">How long a woken host has to answer a ping before it is reported as not waking up and sent one more packet. 0 disables the check.</div>
+		  </div>
+	   </div>
 	</div>
 
     <div class="config-section">
@@ -274,6 +281,10 @@
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="notify_power_restored" name="notify_power_restored" value="true" {% if pm_config.get('NOTIFY_POWER_RESTORED') == 'true' %}checked{% endif %}>
                     <label class="form-check-label" for="notify_power_restored">Power Restored</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="notify_wol_failure" name="notify_wol_failure" value="true" {% if pm_config.get('NOTIFY_WOL_FAILURE', 'true') == 'true' %}checked{% endif %}>
+                    <label class="form-check-label" for="notify_wol_failure">Host Did Not Wake Up</label>
                 </div>
             </div>
             <div class="col-md-4">

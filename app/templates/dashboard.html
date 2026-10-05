@@ -741,6 +741,13 @@ function updateClientStatusUI(clientStatuses) {
         } else if (detailedStatus && detailedStatus.status === 'wol_sent') {
             if (isPingable) statusHtml = `<span class="status-online"><i class="fas fa-spinner fa-spin me-1"></i>Booting...</span>`;
             else statusHtml = `<span class="badge bg-info"><i class="fas fa-magic me-1"></i>WoL sent</span>`;
+        } else if (detailedStatus && detailedStatus.status === 'wol_no_response') {
+            if (isPingable) statusHtml = `<span class="status-online"><i class="fas fa-spinner fa-spin me-1"></i>Booting...</span>`;
+            else {
+                statusHtml = `<span class="badge bg-danger text-white" title="Wake-on-LAN was sent but the host never answered a ping - check its MAC address, NIC and BIOS wake settings"><i class="fas fa-exclamation-triangle me-1"></i>Did not wake up</span>`;
+                if (wolButton) wolButton.style.display = 'inline-block';
+                if (wolButtonMobile) wolButtonMobile.style.display = 'inline-block';
+            }
         } else if (detailedStatus && detailedStatus.status === 'wol_deferred') {
             statusHtml = `<span class="badge bg-secondary" title="Waiting for the battery to charge before waking this host"><i class="fas fa-hourglass-half me-1"></i>Waiting for charge</span>`;
             if (wolButton) wolButton.style.display = 'inline-block';

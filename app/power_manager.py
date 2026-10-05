@@ -35,12 +35,21 @@ POWER_STATE_FILE = "/var/run/nut/power_state.json"
 BATTERY_WOL_STATE_FILE = "/var/run/nut/battery_wol.json"
 BATTERY_GAP_STATE_FILE = "/var/run/nut/battery_gap.json"
 BATTERY_OUTAGE_STATE_FILE = "/var/run/nut/battery_outage.json"
+WOL_WATCH_STATE_FILE = "/var/run/nut/wol_watch.json"
 UPS_STATE_FILE_DEFAULT = "/var/run/nut/virtual.device"
 LOCK_FILE = "/var/run/nut/power_manager.lock"
 
 # Sub-minute polling: 4 iterations x 15 seconds = 60 seconds per cron cycle
 CHECK_ITERATIONS = 4
 CHECK_INTERVAL_SECONDS = 15
+
+# A host that stays silent this long after its WoL alert is no longer watched.
+WOL_WATCH_EXPIRY_MINUTES = 24 * 60
+
+# Notification classes introduced after installations already existed. They
+# default to on, so that upgrading does not quietly ship an alarm switched off
+# in every config file that predates it.
+NOTIFY_DEFAULTS = {'WOL_FAILURE': 'true'}
 
 # Commands
 PING_CMD = "/bin/ping"
@@ -194,7 +203,8 @@ class Notifier:
     def send(self, n_type, subject, body):
         """Sends a notification if enabled and not debounced."""
         enabled_var = f"NOTIFY_{n_type.upper()}"
-        if self.config.get(enabled_var, 'false').lower() != 'true':
+        default = NOTIFY_DEFAULTS.get(n_type.upper(), 'false')
+        if self.config.get(enabled_var, default).lower() != 'true':
             log.info(f"Notification for {n_type} is disabled. Skipping.")
             return
 
@@ -334,6 +344,7 @@ class PowerManager:
         # sitting in POWER_FAIL and nothing looks like a transition.
         self.real_fail_notified = False
         self.client_notification_states = {}
+        self.iteration = 0
 
     def _load_state(self):
         """Safely load state from files with comprehensive error handling."""
@@ -635,6 +646,10 @@ class PowerManager:
             log.warning("STATE CHANGE: Power failure detected!")
             self._clear_file(CLIENT_NOTIFICATION_STATE_FILE)
             self.client_notification_states = {}
+            # Hosts woken after the last outage are about to be shut down by
+            # this one; their silence would be expected, not a failed wake-up.
+            if self._read_wol_watch():
+                self._write_wol_watch({})
 
         # The outage alert deliberately hangs off the sentinel reading rather
         # than off state_changed. A simulation window parks the state machine in
@@ -845,9 +860,7 @@ class PowerManager:
         broadcast = params.get('BROADCAST_IP', self.config.get('DEFAULT_BROADCAST_IP'))
 
         try:
-            ping_result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip],
-                                         capture_output=True, timeout=3)
-            if ping_result.returncode == 0:
+            if self._ping(ip):
                 log.info(f"Host {name} ({ip}) is already online.")
                 return 'online'
 
@@ -858,6 +871,7 @@ class PowerManager:
             if wol_result.returncode == 0:
                 self._update_client_status_json(ip, "wol_sent")
                 log.info(f"WoL packet sent successfully to {name} ({ip})")
+                self._watch_wol(ip)
                 return 'sent'
 
             log.error(f"Failed to send WoL packet to {name} ({ip}): {wol_result.stderr.decode()}")
@@ -868,6 +882,181 @@ class PowerManager:
             log.error(f"Error during WoL process for {name} ({ip}): {e}")
             self._update_client_status_json(ip, "wol_error")
             return 'error'
+
+    def _ping(self, ip):
+        """True if the host answers a single ping within a second."""
+        try:
+            result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip],
+                                    capture_output=True, timeout=3)
+        except (subprocess.TimeoutExpired, OSError):
+            return False
+        return result.returncode == 0
+
+    def _wol_confirm_timeout(self):
+        """Minutes a woken host gets to answer a ping; 0 disables the check."""
+        try:
+            value = int(self.config.get('WOL_CONFIRM_TIMEOUT_MINUTES', 10))
+        except (TypeError, ValueError):
+            log.warning(
+                "Invalid WOL_CONFIRM_TIMEOUT_MINUTES '%s' - using 10",
+                self.config.get('WOL_CONFIRM_TIMEOUT_MINUTES'),
+            )
+            return 10
+        return max(0, value)
+
+    def _read_wol_watch(self):
+        """Load the hosts waiting to prove a WoL packet worked, or {}."""
+        try:
+            with open(WOL_WATCH_STATE_FILE, 'r') as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except FileNotFoundError:
+            return {}
+        except (IOError, json.JSONDecodeError) as e:
+            log.warning(f"Cannot read WoL watch state, starting fresh: {e}")
+            return {}
+
+    def _write_wol_watch(self, watch):
+        """Persist the WoL watch atomically; each iteration is a fresh process."""
+        try:
+            temp_file = WOL_WATCH_STATE_FILE + ".tmp"
+            with open(temp_file, 'w') as f:
+                json.dump(watch, f, indent=2)
+            os.replace(temp_file, WOL_WATCH_STATE_FILE)
+        except (IOError, OSError, TypeError) as e:
+            log.error(f"Cannot write WoL watch state: {e}")
+
+    def _watch_wol(self, ip):
+        """Start the clock on a host we just sent a WoL packet to.
+
+        Only the first packet counts. A host still booting is sent another one
+        on every pass of a pending cycle, and restarting the clock each time
+        would postpone the alert for as long as the cycle kept retrying.
+        """
+        if self._wol_confirm_timeout() == 0:
+            return
+        watch = self._read_wol_watch()
+        if ip not in watch:
+            watch[ip] = {'sent_at': int(datetime.now().timestamp()), 'alerted': False}
+            self._write_wol_watch(watch)
+
+    def _check_wol_watch(self):
+        """Alert when a host we woke has not come up.
+
+        A WoL packet is fire-and-forget: wakeonlan exits 0 whether or not
+        anything on the wire listens for that MAC. So "WoL packet sent
+        successfully" proves only that the packet left this server. On
+        2026-10-05 PVE1 was configured with the MAC of a long-replaced
+        motherboard; the packet went nowhere, the cycle reported success and
+        closed, and the host stayed off with its dashboard status frozen at
+        "WoL sent" until somebody noticed by hand.
+
+        The wake-up cycle clears its own state the moment the packets are out,
+        so the follow-up needs a tracker of its own that outlives it. Each host
+        gets WOL_CONFIRM_TIMEOUT_MINUTES to answer a ping. One that does not
+        gets a second packet and an alert; if it turns up later, a closing
+        message says so.
+        """
+        watch = self._read_wol_watch()
+        if not watch:
+            return
+
+        timeout = self._wol_confirm_timeout()
+        if timeout == 0:
+            self._write_wol_watch({})
+            return
+
+        # Silence during an outage is the shutdown logic working, not WoL
+        # failing. The clock keeps running; the verdict waits for mains.
+        on_battery = (self.battery_status is not None
+                      and self.battery_status.ac_power is False)
+        if self.real_power_offline or on_battery:
+            return
+
+        now_ts = int(datetime.now().timestamp())
+        hosts_by_ip = {p.get('IP'): p for p in self.wake_hosts.values() if p.get('IP')}
+        changed = False
+
+        for ip, entry in list(watch.items()):
+            params = hosts_by_ip.get(ip)
+            if not params or not params.get('MAC'):
+                log.info("Dropping WoL watch for %s - no longer a WoL host.", ip)
+                del watch[ip]
+                changed = True
+                continue
+
+            name = params.get('NAME', ip)
+            sent_at = entry.get('sent_at', now_ts)
+            waited = (now_ts - sent_at) // 60
+            if waited < timeout:
+                continue
+
+            # Once the alert is out nothing urgent is left to decide, and every
+            # unanswered ping costs a second of the 15s budget - once a minute
+            # is plenty.
+            if entry.get('alerted') and self.iteration != 0:
+                continue
+
+            if self._ping(ip):
+                if entry.get('alerted'):
+                    log.info("%s (%s) is up, %d min after WoL - it had been reported "
+                             "as not waking up.", name, ip, waited)
+                    self.notifier.send(
+                        "WOL_FAILURE", f"[UPS] INFO: {name} Is Up After All",
+                        f"{name} ({ip}) answers again, {waited} min after the first "
+                        "Wake-on-LAN packet. It had been reported as not waking up; "
+                        "no further action is needed."
+                    )
+                else:
+                    log.info("%s (%s) answered after WoL.", name, ip)
+                del watch[ip]
+                changed = True
+                continue
+
+            if entry.get('alerted'):
+                if waited >= WOL_WATCH_EXPIRY_MINUTES:
+                    log.warning("Giving up on %s (%s): still silent %d h after WoL.",
+                                name, ip, waited // 60)
+                    del watch[ip]
+                    changed = True
+                continue
+
+            log.warning("WoL NO RESPONSE: %s (%s) has not answered a ping %d min "
+                        "after Wake-on-LAN - sending one more packet.", name, ip, waited)
+            result = self._wake_host(params)
+            if result == 'online':
+                # Came up in the second between the two pings.
+                del watch[ip]
+                changed = True
+                continue
+
+            self._update_client_status_json(ip, "wol_no_response")
+            entry['alerted'] = True
+            changed = True
+
+            broadcast = params.get('BROADCAST_IP', self.config.get('DEFAULT_BROADCAST_IP'))
+            retry = ("One more packet was sent just now." if result == 'sent'
+                     else f"Sending one more packet failed as well ({result}).")
+            self.notifier.send(
+                "WOL_FAILURE", f"[UPS] WARNING: {name} Did Not Wake Up",
+                f"{name} ({ip}) has not answered a ping {waited} min after the "
+                f"Wake-on-LAN packet sent at {datetime.fromtimestamp(sent_at):%H:%M}. "
+                f"{retry}\n\n"
+                "A sent packet only proves it left this server. Usual causes:\n\n"
+                f"- the MAC address in the config is wrong (configured: "
+                f"{params.get('MAC')}, broadcast {broadcast})\n"
+                "- Wake-on-LAN is disabled on the network card - `ethtool <nic>` "
+                "should show 'Wake-on: g'\n"
+                "- the BIOS cuts standby power to the card (ErP / deep sleep on, "
+                "or wake from PCI-E off)\n"
+                "- the host lost power entirely rather than shutting down, and "
+                "is waiting for its power button\n\n"
+                "You will get one more message if it comes up later."
+                + self._battery_context()
+            )
+
+        if changed:
+            self._write_wol_watch(watch)
 
     def _battery_context(self):
         """Battery summary to append to notification bodies, or '' if unavailable."""
@@ -1538,6 +1727,7 @@ class PowerManager:
                       only runs on iteration 0 to avoid duplicate triggers.
         """
         log.info(f"--- Power check initiated (iteration {iteration + 1}/{CHECK_ITERATIONS}) ---")
+        self.iteration = iteration
         try:
             self._load_state()
 
@@ -1585,6 +1775,10 @@ class PowerManager:
             # Independent of the handlers above: this condition can begin and
             # end without power_status ever leaving ONLINE.
             self._check_battery_only_outage()
+
+            # After the handlers, so a WoL packet sent on this very pass is
+            # already being watched, and a new outage has already cleared it.
+            self._check_wol_watch()
 
             self._check_client_statuses()
             

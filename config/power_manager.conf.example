@@ -9,6 +9,13 @@ SENTINEL_HOSTS="192.168.1.11 192.168.1.12 192.168.1.13 192.168.1.14"
 # This prevents waking servers during unstable power conditions (flickering).
 WOL_DELAY_MINUTES=5
 
+# How long a woken host has to answer a ping before it is reported as not
+# waking up. It then gets one more WoL packet and a NOTIFY_WOL_FAILURE alert.
+# A sent packet proves nothing about the host: wakeonlan succeeds even when the
+# MAC is wrong, so without this a host can stay off with nothing to say so.
+# 0 disables the check.
+WOL_CONFIRM_TIMEOUT_MINUTES="10"
+
 # The time in minutes after which a client is considered stale if it hasn't
 # reported its status.
 CLIENT_STALE_TIMEOUT_MINUTES="5"
@@ -185,6 +192,7 @@ BATTERY_SIM_REMAINING=""      # minutes, e.g. 20
 # NOTIFY_CLIENT_STALE="true"
 # NOTIFY_APP_ERROR="true"
 # NOTIFY_SIMULATION_MODE="true"
+# NOTIFY_WOL_FAILURE="true"       # on unless set to "false"
 
 # === WAKE-ON-LAN HOST DEFINITIONS ===
 # Define each host that should be awakened after power restoration
